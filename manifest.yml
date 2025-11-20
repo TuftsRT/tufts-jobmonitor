@@ -1,0 +1,7 @@
+---
+name: Job Monitor
+description: Monitor your SLURM jobs including running, pending, and historical jobs with detailed information
+icon: fa://briefcase
+category: Jobs
+subcategory: Monitoring
+
