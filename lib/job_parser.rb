@@ -77,8 +77,37 @@ module JobParser
     )
     
     jobs = []
-    seen_jobs = Set.new
+    job_memory = {}  # Track max memory for each main job
     
+    # First pass: collect memory from job steps
+    output.each_line do |line|
+      parts = line.strip.split('|')
+      next if parts.length < 13
+      
+      job_id = parts[0]
+      
+      # Extract main job ID (before the dot)
+      main_job_id = job_id.split('.').first
+      
+      # Track the maximum memory usage across all steps
+      max_rss_raw = parts[7] || ''
+      if !max_rss_raw.strip.empty?
+        # Convert to bytes for comparison
+        current_bytes = parse_memory_to_bytes(max_rss_raw)
+        if current_bytes > 0
+          if !job_memory[main_job_id] || current_bytes > job_memory[main_job_id][:bytes]
+            job_memory[main_job_id] = {
+              bytes: current_bytes,
+              raw: max_rss_raw,
+              formatted: parse_memory(max_rss_raw)
+            }
+          end
+        end
+      end
+    end
+    
+    # Second pass: build job list (only main jobs)
+    seen_jobs = Set.new
     output.each_line do |line|
       parts = line.strip.split('|')
       next if parts.length < 13
@@ -92,8 +121,11 @@ module JobParser
       next if seen_jobs.include?(job_id)
       seen_jobs.add(job_id)
       
-      # Parse memory
-      max_rss = parse_memory(parts[7])
+      # Get the maximum memory from all steps
+      memory_info = job_memory[job_id]
+      max_rss = memory_info ? memory_info[:formatted] : 'N/A'
+      max_rss_raw = memory_info ? memory_info[:raw] : ''
+      
       req_mem = parts[8]
       
       # Parse GPUs from ReqTRES field (index 13)
@@ -114,7 +146,7 @@ module JobParser
         start: parts[5],
         end: parts[6],
         max_rss: max_rss,
-        max_rss_raw: parts[7],
+        max_rss_raw: max_rss_raw,
         req_mem: req_mem,
         nodes: parts[9].to_i,
         cpus: parts[10].to_i,
@@ -361,6 +393,32 @@ module JobParser
     end
     
     mem_str
+  end
+  
+  # Parse memory string to bytes for comparison
+  def self.parse_memory_to_bytes(mem_str)
+    return 0 if mem_str.nil? || mem_str.empty?
+    
+    # Memory can be in format like "1234K", "5678M", "9G"
+    if mem_str =~ /^([\d.]+)([KMGT]?)$/
+      value = $1.to_f
+      unit = $2
+      
+      case unit
+      when 'K'
+        return (value * 1024).to_i
+      when 'M'
+        return (value * 1024 * 1024).to_i
+      when 'G'
+        return (value * 1024 * 1024 * 1024).to_i
+      when 'T'
+        return (value * 1024 * 1024 * 1024 * 1024).to_i
+      else
+        return value.to_i  # Assume bytes if no unit
+      end
+    end
+    
+    0
   end
 end
 

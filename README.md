@@ -20,8 +20,9 @@ A comprehensive web-based dashboard for monitoring and managing SLURM jobs, feat
 ### 📜 Comprehensive Job History
 - View historical jobs from the last 1, 3, 7, 14, or 30 days via `sacct`
 - Filter by job state (Completed, Failed, Cancelled, Timeout)
-- See detailed execution time, memory usage, and exit codes
+- See detailed execution time, memory usage (aggregated from job steps), and exit codes
 - Track resource usage including CPU, GPU, and memory allocation
+- **Intelligent memory collection:** Automatically aggregates MaxRSS from SLURM job steps
 - Track job efficiency over time
 - Search through historical jobs
 
@@ -44,6 +45,7 @@ A comprehensive web-based dashboard for monitoring and managing SLURM jobs, feat
    - Resource allocation (nodes, CPUs, GPUs)
    - Working directory and output file locations
    - **Historical jobs only:** Elapsed time, exit code, requested/used memory
+   - **Max Memory Used:** Aggregated from job steps (typically from `.batch` step)
    - Dynamically shows relevant fields based on job status
    - **Purpose:** Quick reference for "What job is this and when did it run?"
 
@@ -163,6 +165,8 @@ sacct --starttime YYYY-MM-DD --endtime YYYY-MM-DD \
 ```
 Retrieves: Complete job history with resource usage, exit codes, and GPU allocation (from ReqTRES)
 
+**Note:** This query returns both main jobs and job steps (`.batch`, `.extern`). The app intelligently aggregates `MaxRSS` from job steps to display accurate memory usage for each main job.
+
 #### Active Job Details
 ```bash
 scontrol show jobid -dd <JOB_ID>
@@ -191,6 +195,47 @@ Retrieves: CPU and memory efficiency metrics
 ./jobinfo <JOB_ID>
 ```
 Retrieves: Parsed metrics including I/O statistics and detailed resource usage
+
+### Memory Data Collection
+
+**Important:** SLURM stores memory usage data at the **job step level**, not on the main job record.
+
+#### How Memory Data is Aggregated:
+
+When you run a job, SLURM creates multiple records:
+```bash
+# Example for job 115665:
+115665              # Main job record - MaxRSS is EMPTY
+115665.batch        # Actual script execution - MaxRSS = 131260K ← Real memory!
+115665.extern       # Setup/cleanup - MaxRSS = 0 or small value
+```
+
+**What the app does:**
+1. Queries `sacct` with `MaxRSS` field for job history
+2. **First pass**: Scans ALL records including `.batch`, `.extern` steps
+3. Identifies the **maximum memory** across all job steps (usually from `.batch`)
+4. **Second pass**: Displays only main jobs, but shows the aggregated max memory
+
+**Result in the table:**
+- **Max Memory column**: Shows the highest `MaxRSS` value from any job step
+- Typically comes from the `.batch` step where your script actually ran
+- Automatically converted to human-readable format (e.g., "128.18 MB")
+
+**Why this matters:**
+- If you only query the main job record, memory will always show as empty
+- The `.batch` step contains the actual resource usage
+- This aggregation ensures you see the real memory consumption
+
+**To verify memory on the cluster:**
+```bash
+# See all steps with memory
+sacct -j <JOB_ID> --format=JobID,JobName,MaxRSS --parsable2
+
+# Example output:
+# 115665|sys/dashboard/...|              ← Empty!
+# 115665.batch|batch|131260K             ← Actual memory
+# 115665.extern|extern|0
+```
 
 ## API Endpoints
 
