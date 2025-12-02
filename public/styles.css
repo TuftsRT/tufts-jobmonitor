@@ -265,6 +265,11 @@ input:checked + .slider:before {
     position: sticky;
     top: 0;
     z-index: 10;
+    overflow: visible;
+}
+
+.jobs-table thead th {
+    overflow: visible;
 }
 
 .jobs-table th {
@@ -548,6 +553,56 @@ input:checked + .slider:before {
     .search-input {
         width: 100%;
     }
+}
+
+/* Tooltip Styles */
+.tooltip-header {
+    cursor: help;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: #888;
+    text-underline-offset: 3px;
+}
+
+.tooltip-header:hover {
+    text-decoration-color: #667eea;
+}
+
+/* JavaScript-powered floating tooltip */
+.column-tooltip {
+    position: fixed;
+    background: linear-gradient(135deg, #1a1a2e 0%, #2d2d44 100%);
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 400;
+    max-width: 320px;
+    text-align: center;
+    line-height: 1.5;
+    z-index: 99999;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-50%) translateY(5px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.column-tooltip::before {
+    content: "";
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 8px solid transparent;
+    border-bottom-color: #1a1a2e;
+    border-top: none;
+}
+
+.column-tooltip.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
 }
 
 /* Utility Classes */

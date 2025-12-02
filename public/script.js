@@ -813,3 +813,42 @@ function getStateClass(state) {
 window.showJobDetails = showJobDetails;
 window.closeJobDetailsModal = closeJobDetailsModal;
 
+// Tooltip system for column headers
+function initTooltips() {
+    // Create tooltip element if it doesn't exist
+    let tooltipEl = document.getElementById('column-tooltip');
+    if (!tooltipEl) {
+        tooltipEl = document.createElement('div');
+        tooltipEl.id = 'column-tooltip';
+        tooltipEl.className = 'column-tooltip';
+        document.body.appendChild(tooltipEl);
+    }
+
+    // Get all tooltip headers
+    const headers = document.querySelectorAll('.tooltip-header');
+    
+    headers.forEach(header => {
+        header.addEventListener('mouseenter', (e) => {
+            const tooltipText = header.getAttribute('data-tooltip');
+            if (!tooltipText) return;
+            
+            tooltipEl.textContent = tooltipText;
+            tooltipEl.classList.add('visible');
+            
+            // Position the tooltip below the header
+            const rect = header.getBoundingClientRect();
+            tooltipEl.style.left = rect.left + (rect.width / 2) + 'px';
+            tooltipEl.style.top = rect.bottom + 8 + 'px';
+        });
+        
+        header.addEventListener('mouseleave', () => {
+            tooltipEl.classList.remove('visible');
+        });
+    });
+}
+
+// Initialize tooltips when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    initTooltips();
+});
+
