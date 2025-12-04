@@ -107,3 +107,35 @@ get '/health' do
   { status: 'ok', timestamp: Time.now.to_i }.to_json
 end
 
+# Debug endpoint to see raw sacct output
+get '/api/debug/sacct' do
+  content_type :json
+  
+  require 'open3'
+  
+  days = params[:days]&.to_i || 7
+  end_date = Time.now
+  start_date = end_date - (days * 24 * 60 * 60)
+  
+  start_str = start_date.strftime('%Y-%m-%d')
+  end_str = (end_date + 86400).strftime('%Y-%m-%d')  # Add 1 day to include today
+  
+  cmd = "sacct --user=$USER --starttime #{start_str} --endtime #{end_str} " +
+        "--format=JobID,JobName,Partition,State,Elapsed,Start,End,MaxRSS,ReqMem,NNodes,NCPUS,NodeList,ExitCode,ReqTRES " +
+        "--noheader --parsable2"
+  
+  stdout, stderr, status = Open3.capture3(cmd)
+  
+  {
+    command: cmd,
+    start_str: start_str,
+    end_str: end_str,
+    stdout: stdout,
+    stderr: stderr,
+    success: status.success?,
+    exit_code: status.exitstatus,
+    line_count: stdout.lines.count,
+    lines: stdout.lines.map(&:strip).first(20)
+  }.to_json
+end
+

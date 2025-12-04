@@ -6,10 +6,17 @@ module JobParser
   # Execute a command and return stdout
   def self.run_command(cmd)
     stdout, stderr, status = Open3.capture3(cmd)
-    return stdout if status.success?
-    raise "Command failed: #{cmd}\n#{stderr}"
+    unless status.success?
+      # Log to STDERR so it appears in server logs
+      STDERR.puts "[JobParser] Command failed (exit #{status.exitstatus}): #{cmd}"
+      STDERR.puts "[JobParser] STDERR: #{stderr}" unless stderr.empty?
+      # Return stdout anyway - sacct may return partial results
+      return stdout
+    end
+    stdout
   rescue => e
-    puts "Error executing command: #{e.message}"
+    STDERR.puts "[JobParser] Exception executing command: #{e.message}"
+    STDERR.puts "[JobParser] Command was: #{cmd}"
     ""
   end
 
@@ -67,11 +74,12 @@ module JobParser
     start_date = end_date - (days * 24 * 60 * 60)
     
     start_str = start_date.strftime('%Y-%m-%d')
-    end_str = end_date.strftime('%Y-%m-%d')
+    # Add 1 day to end_str to include today's jobs (sacct --endtime is exclusive)
+    end_str = (end_date + 86400).strftime('%Y-%m-%d')
     
     # Use sacct to get historical jobs (including ReqTRES for GPU info)
     output = run_command(
-      "sacct --starttime #{start_str} --endtime #{end_str} " +
+      "sacct --user=$USER --starttime #{start_str} --endtime #{end_str} " +
       "--format=JobID,JobName,Partition,State,Elapsed,Start,End,MaxRSS,ReqMem,NNodes,NCPUS,NodeList,ExitCode,ReqTRES " +
       "--noheader --parsable2"
     )
@@ -81,7 +89,8 @@ module JobParser
     
     # First pass: collect memory from job steps
     output.each_line do |line|
-      parts = line.strip.split('|')
+      # Use -1 limit to keep trailing empty fields
+      parts = line.strip.split('|', -1)
       next if parts.length < 13
       
       job_id = parts[0]
@@ -109,7 +118,8 @@ module JobParser
     # Second pass: build job list (only main jobs)
     seen_jobs = Set.new
     output.each_line do |line|
-      parts = line.strip.split('|')
+      # Use -1 limit to keep trailing empty fields
+      parts = line.strip.split('|', -1)
       next if parts.length < 13
       
       job_id = parts[0]
