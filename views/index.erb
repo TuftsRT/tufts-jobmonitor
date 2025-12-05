@@ -14,6 +14,16 @@
         // Base path for the app when mounted under a sub-URL in OOD
         window.APP_BASE_PATH = "<%= request.script_name %>";
     </script>
+    
+    <!-- Navigation Bar -->
+    <nav class="top-nav">
+        <a href="/pun/sys/dashboard" class="nav-link">
+            <i class="fas fa-home"></i> Dashboard
+        </a>
+        <span class="nav-separator"><i class="fas fa-chevron-right"></i></span>
+        <span class="nav-current"><i class="fas fa-briefcase"></i> Job Monitor</span>
+    </nav>
+    
     <div class="container">
         <!-- Header -->
         <header class="header">
