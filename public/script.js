@@ -355,12 +355,12 @@ async function showJobDetails(jobid) {
     modal.classList.remove('hidden');
     content.innerHTML = '<div class="text-center"><div class="spinner"></div></div>';
     
-    // Reset to overview tab
+    // Reset to basic tab
     document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
-    document.querySelector('[data-tab="overview"]').classList.add('active');
+    document.querySelector('[data-tab="basic"]').classList.add('active');
     
-    // Load overview tab by default
-    await loadJobOverview(jobid);
+    // Load basic info tab by default
+    await loadBasicInfo(jobid);
 }
 
 // Close job details modal
@@ -383,392 +383,270 @@ function setupJobDetailsTabs() {
             
             // Use the global currentJobId instead of closure
             switch(tab) {
-                case 'overview':
-                    await loadJobOverview(currentJobId);
+                case 'basic':
+                    await loadBasicInfo(currentJobId);
                     break;
-                case 'efficiency':
-                    await loadJobEfficiency(currentJobId);
+                case 'resources':
+                    await loadResourcesIO(currentJobId);
                     break;
-                case 'detailed':
-                    await loadJobInfo(currentJobId);
-                    break;
-                case 'raw':
-                    await loadJobRaw(currentJobId);
+                case 'script':
+                    await loadJobScript(currentJobId);
                     break;
             }
         });
     });
 }
 
-// Load job overview
-async function loadJobOverview(jobid) {
-    const cacheKey = `overview_${jobid}`;
+// Load basic job information (Tab 1)
+async function loadBasicInfo(jobid) {
+    const cacheKey = `basic_${jobid}`;
     
     // Check cache first
     if (jobDetailsCache[cacheKey]) {
-        debugLog(`Using cached overview for job: ${jobid}`);
-        const details = jobDetailsCache[cacheKey];
-        renderJobOverviewData(details);
+        debugLog(`Using cached basic info for job: ${jobid}`);
+        renderBasicInfoData(jobDetailsCache[cacheKey]);
         return;
     }
     
     try {
-        debugLog(`Fetching job overview for job: ${jobid}`);
+        debugLog(`Fetching basic info for job: ${jobid}`);
         
         const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`);
         const result = await response.json();
         
-        debugLog('Job overview response:', result);
+        debugLog('Basic info response:', result);
         
         if (result.success) {
             const details = result.data;
-            // Cache the data
             jobDetailsCache[cacheKey] = details;
-            debugLog('Job details:', details);
-            
-            // Render the data
-            renderJobOverviewData(details);
+            renderBasicInfoData(details);
         } else {
             throw new Error(result.error || 'Failed to load job details');
         }
     } catch (error) {
         document.getElementById('job-details-content').innerHTML = 
-            `<div class="error">Error loading job overview: ${escapeHtml(error.message)}</div>`;
+            `<div class="error">Error loading job details: ${escapeHtml(error.message)}</div>`;
     }
 }
 
-// Render job overview data (extracted for reusability)
-function renderJobOverviewData(details) {
-    const content = document.getElementById('job-details-content');
-    
-    // Build details HTML with conditional fields based on what's available
-    let detailsHtml = `
-                <p style="color: #666; font-size: 0.9rem; margin-bottom: 20px; padding: 10px; background: #f8f9fa; border-radius: 6px;">
-                    <i class="fas fa-info-circle"></i> <strong>Job Info:</strong> Essential job metadata including times, resources, and locations
-                </p>
-                <div class="details-grid">
-                <div class="detail-item">
-                    <div class="detail-label">Job ID</div>
-                    <div class="detail-value">${escapeHtml(details.job_id || 'N/A')}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Job Name</div>
-                    <div class="detail-value">${escapeHtml(details.job_name || 'N/A')}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">User</div>
-                    <div class="detail-value">${escapeHtml(details.user || 'N/A')}</div>
-                </div>
-                ${details.account ? `
-                <div class="detail-item">
-                    <div class="detail-label">Account</div>
-                    <div class="detail-value">${escapeHtml(details.account)}</div>
-                </div>
-                ` : ''}
-                <div class="detail-item">
-                    <div class="detail-label">Partition</div>
-                    <div class="detail-value">${escapeHtml(details.partition || 'N/A')}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">State</div>
-                    <div class="detail-value"><span class="state-badge state-${getStateClass(details.state)}">${escapeHtml(details.state || 'N/A')}</span></div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Submit Time</div>
-                    <div class="detail-value">${escapeHtml(details.submit_time || 'N/A')}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Start Time</div>
-                    <div class="detail-value">${escapeHtml(details.start_time || 'N/A')}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">End Time</div>
-                    <div class="detail-value">${escapeHtml(details.end_time || 'N/A')}</div>
-                </div>
-                ${details.elapsed ? `
-                <div class="detail-item">
-                    <div class="detail-label">Elapsed Time</div>
-                    <div class="detail-value">${escapeHtml(details.elapsed)}</div>
-                </div>
-                ` : ''}
-                <div class="detail-item">
-                    <div class="detail-label">Time Limit</div>
-                    <div class="detail-value">${escapeHtml(details.time_limit || 'N/A')}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Nodes</div>
-                    <div class="detail-value">${escapeHtml(details.nodes || 'N/A')}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">CPUs</div>
-                    <div class="detail-value">${escapeHtml(details.cpus || 'N/A')}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">GPUs</div>
-                    <div class="detail-value">${details.gpus || 0}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">Node List</div>
-                    <div class="detail-value">${escapeHtml(details.node_list || 'N/A')}</div>
-                </div>
-                ${details.req_mem ? `
-                <div class="detail-item">
-                    <div class="detail-label">Requested Memory</div>
-                    <div class="detail-value">${escapeHtml(details.req_mem)}</div>
-                </div>
-                ` : ''}
-                ${details.max_rss ? `
-                <div class="detail-item">
-                    <div class="detail-label">Max Memory Used</div>
-                    <div class="detail-value">${escapeHtml(details.max_rss)}</div>
-                </div>
-                ` : ''}
-                ${details.exit_code ? `
-                <div class="detail-item">
-                    <div class="detail-label">Exit Code</div>
-                    <div class="detail-value">${escapeHtml(details.exit_code)}</div>
-                </div>
-                ` : ''}
-                <div class="detail-item">
-                    <div class="detail-label">Working Directory</div>
-                    <div class="detail-value" style="word-break: break-all;">${escapeHtml(details.work_dir || 'N/A')}</div>
-                </div>
-                ${details.std_out ? `
-                <div class="detail-item">
-                    <div class="detail-label">Standard Output</div>
-                    <div class="detail-value" style="word-break: break-all;">${escapeHtml(details.std_out)}</div>
-                </div>
-                ` : ''}
-                ${details.std_err ? `
-                <div class="detail-item">
-                    <div class="detail-label">Standard Error</div>
-                    <div class="detail-value" style="word-break: break-all;">${escapeHtml(details.std_err)}</div>
-                </div>
-                ` : ''}
-                ${details.reason ? `
-                <div class="detail-item" style="grid-column: 1 / -1;">
-                    <div class="detail-label">Reason</div>
-                    <div class="detail-value">${escapeHtml(details.reason)}</div>
-                </div>
-                ` : ''}
-            </div>`;
-    
-    content.innerHTML = detailsHtml;
-}
-
-// Load job efficiency
-async function loadJobEfficiency(jobid) {
-    const cacheKey = `efficiency_${jobid}`;
-    
-    // Check cache first
-    if (jobDetailsCache[cacheKey]) {
-        debugLog(`Using cached efficiency for job: ${jobid}`);
-        const eff = jobDetailsCache[cacheKey];
-        renderJobEfficiencyData(eff);
-        return;
-    }
-    
-    try {
-        debugLog(`Fetching job efficiency for job: ${jobid}`);
-        
-        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}/efficiency`);
-        const result = await response.json();
-        
-        debugLog('Job efficiency response:', result);
-        
-        if (result.success) {
-            const eff = result.data;
-            // Cache the data
-            jobDetailsCache[cacheKey] = eff;
-            debugLog('Job efficiency data:', eff);
-            
-            renderJobEfficiencyData(eff);
-        } else {
-            throw new Error(result.error || 'Failed to load efficiency data');
-        }
-    } catch (error) {
-        document.getElementById('job-details-content').innerHTML = 
-            `<div class="error">Error loading job efficiency: ${escapeHtml(error.message)}</div>`;
-    }
-}
-
-// Render job efficiency data (extracted for reusability)
-function renderJobEfficiencyData(eff) {
+// Render basic information (Tab 1)
+function renderBasicInfoData(details) {
     const content = document.getElementById('job-details-content');
     
     content.innerHTML = `
-                <p style="color: #666; font-size: 0.9rem; margin-bottom: 20px; padding: 10px; background: #f0f8ff; border-radius: 6px;">
-                    <i class="fas fa-chart-line"></i> <strong>Resource Utilization:</strong> How efficiently your job used allocated CPU and memory (via <code>seff</code>)
-                </p>
-                <div class="details-grid">
-                    <div class="detail-item">
-                        <div class="detail-label">Job ID</div>
-                        <div class="detail-value">${escapeHtml(eff.job_id || 'N/A')}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">State</div>
-                        <div class="detail-value">${escapeHtml(eff.state || 'N/A')}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Cores</div>
-                        <div class="detail-value">${eff.cores || 'N/A'}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Wall-clock Time</div>
-                        <div class="detail-value">${escapeHtml(eff.wallclock || 'N/A')}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">CPU Utilized</div>
-                        <div class="detail-value">${escapeHtml(eff.cpu_utilized || 'N/A')}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">CPU Efficiency</div>
-                        <div class="detail-value">${eff.cpu_efficiency ? eff.cpu_efficiency + '%' : 'N/A'}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Memory Utilized</div>
-                        <div class="detail-value">${escapeHtml(eff.memory_utilized || 'N/A')}</div>
-                    </div>
-                    <div class="detail-item">
-                        <div class="detail-label">Memory Efficiency</div>
-                        <div class="detail-value">${eff.memory_efficiency ? eff.memory_efficiency + '%' : 'N/A'}</div>
-                    </div>
-                </div>
-                <div style="margin-top: 20px;">
-                    <h3 style="margin-bottom: 15px;">Raw Output</h3>
-                    <pre class="raw-output">${escapeHtml(eff.raw_output || 'No output available')}</pre>
-                </div>
-            `;
+        <div class="details-grid">
+            <div class="detail-item">
+                <div class="detail-label">Job ID</div>
+                <div class="detail-value">${escapeHtml(details.job_id || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Job Name</div>
+                <div class="detail-value">${escapeHtml(details.job_name || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Partition</div>
+                <div class="detail-value">${escapeHtml(details.partition || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Nodes</div>
+                <div class="detail-value">${escapeHtml(details.nodes || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Node List</div>
+                <div class="detail-value">${escapeHtml(details.node_list || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">State</div>
+                <div class="detail-value"><span class="state-badge state-${getStateClass(details.state)}">${escapeHtml(details.state || 'N/A')}</span></div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Exit Code</div>
+                <div class="detail-value">${escapeHtml(details.exit_code || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Submit Time</div>
+                <div class="detail-value">${escapeHtml(details.submit_time || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Start Time</div>
+                <div class="detail-value">${escapeHtml(details.start_time || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">End Time</div>
+                <div class="detail-value">${escapeHtml(details.end_time || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Elapsed Time</div>
+                <div class="detail-value">${escapeHtml(details.elapsed || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Time Limit</div>
+                <div class="detail-value">${escapeHtml(details.time_limit || 'N/A')}</div>
+            </div>
+        </div>`;
 }
 
-// Load job info (using jobinfo script)
-async function loadJobInfo(jobid) {
-    const cacheKey = `info_${jobid}`;
+// Load computation resources and I/O (Tab 2)
+async function loadResourcesIO(jobid) {
+    const cacheKey = `resources_${jobid}`;
     
     // Check cache first
     if (jobDetailsCache[cacheKey]) {
-        debugLog(`Using cached jobinfo for job: ${jobid}`);
-        const info = jobDetailsCache[cacheKey];
-        renderJobInfoData(info);
+        debugLog(`Using cached resources for job: ${jobid}`);
+        renderResourcesIOData(jobDetailsCache[cacheKey]);
         return;
     }
     
     try {
-        debugLog(`Fetching detailed job info (jobinfo) for job: ${jobid}`);
+        debugLog(`Fetching resources & I/O for job: ${jobid}`);
         
-        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}/info`);
-        const result = await response.json();
+        // Fetch both efficiency (seff) and jobinfo data in parallel
+        const [effResponse, infoResponse, detailsResponse] = await Promise.all([
+            fetch(`${window.APP_BASE_PATH}/api/job/${jobid}/efficiency`),
+            fetch(`${window.APP_BASE_PATH}/api/job/${jobid}/info`),
+            fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`)
+        ]);
         
-        debugLog('Jobinfo response:', result);
+        const [effResult, infoResult, detailsResult] = await Promise.all([
+            effResponse.json(),
+            infoResponse.json(),
+            detailsResponse.json()
+        ]);
         
-        if (result.success) {
-            const info = result.data;
-            // Cache the data
-            jobDetailsCache[cacheKey] = info;
-            debugLog('Jobinfo data:', info);
-            
-            renderJobInfoData(info);
-        } else {
-            throw new Error(result.error || 'Failed to load job info');
-        }
+        // Combine the data
+        const combinedData = {
+            efficiency: effResult.success ? effResult.data : {},
+            jobinfo: infoResult.success ? infoResult.data : {},
+            details: detailsResult.success ? detailsResult.data : {}
+        };
+        
+        jobDetailsCache[cacheKey] = combinedData;
+        renderResourcesIOData(combinedData);
     } catch (error) {
         document.getElementById('job-details-content').innerHTML = 
-            `<div class="error">Error loading job info: ${escapeHtml(error.message)}</div>`;
+            `<div class="error">Error loading resources & I/O: ${escapeHtml(error.message)}</div>`;
     }
 }
 
-// Render job info data (extracted for reusability)
-function renderJobInfoData(info) {
+// Render resources and I/O data (Tab 2)
+function renderResourcesIOData(data) {
+    const content = document.getElementById('job-details-content');
+    const eff = data.efficiency || {};
+    const info = data.jobinfo || {};
+    const details = data.details || {};
+    
+    // Extract I/O fields from jobinfo if available
+    const ioFields = info.fields || {};
+    const maxDiskWrite = ioFields['Max Disk Write'] || ioFields['MaxDiskWrite'] || 'N/A';
+    const maxDiskRead = ioFields['Max Disk Read'] || ioFields['MaxDiskRead'] || 'N/A';
+    
+    content.innerHTML = `
+        <div class="details-grid">
+            <div class="detail-item">
+                <div class="detail-label">CPUs</div>
+                <div class="detail-value">${escapeHtml(details.cpus || eff.cores || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">GPUs</div>
+                <div class="detail-value">${details.gpus || 0}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Requested Memory</div>
+                <div class="detail-value">${escapeHtml(details.req_mem || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">CPU Efficiency</div>
+                <div class="detail-value">${eff.cpu_efficiency ? eff.cpu_efficiency + '%' : 'N/A'}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Memory Efficiency</div>
+                <div class="detail-value">${eff.memory_efficiency ? eff.memory_efficiency + '%' : 'N/A'}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Max Memory Used</div>
+                <div class="detail-value">${escapeHtml(eff.memory_utilized || details.max_rss || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Max Disk Write</div>
+                <div class="detail-value">${escapeHtml(maxDiskWrite)}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">Max Disk Read</div>
+                <div class="detail-value">${escapeHtml(maxDiskRead)}</div>
+            </div>
+        </div>`;
+}
+
+// Load job script (Tab 3)
+async function loadJobScript(jobid) {
+    const cacheKey = `script_${jobid}`;
+    
+    // Check cache first
+    if (jobDetailsCache[cacheKey]) {
+        debugLog(`Using cached script for job: ${jobid}`);
+        renderJobScriptData(jobDetailsCache[cacheKey]);
+        return;
+    }
+    
+    try {
+        debugLog(`Fetching job script for job: ${jobid}`);
+        
+        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}/script`);
+        const result = await response.json();
+        
+        debugLog('Job script response:', result);
+        
+        if (result.success) {
+            jobDetailsCache[cacheKey] = result.data;
+            renderJobScriptData(result.data);
+        } else {
+            throw new Error(result.error || 'Failed to load job script');
+        }
+    } catch (error) {
+        document.getElementById('job-details-content').innerHTML = 
+            `<div class="error">Error loading job script: ${escapeHtml(error.message)}</div>`;
+    }
+}
+
+// Render job script (Tab 3)
+function renderJobScriptData(data) {
     const content = document.getElementById('job-details-content');
     
-    if (info.error) {
+    if (!data.available || !data.script) {
         content.innerHTML = `
-            <p style="color: #666; font-size: 0.9rem; margin-bottom: 20px; padding: 10px; background: #fff3cd; border-radius: 6px;">
-                <i class="fas fa-exclamation-triangle"></i> <strong>I/O & Performance:</strong> Detailed disk I/O and CPU breakdown analysis (via <code>jobinfo</code> script)
-            </p>
-            <div class="text-center text-muted">${escapeHtml(info.error)}</div>
-        `;
+            <div class="text-center text-muted" style="padding: 40px;">
+                <i class="fas fa-file-code" style="font-size: 3rem; color: #ccc; margin-bottom: 15px; display: block;"></i>
+                <p>Job script not available for this job.</p>
+                <p style="font-size: 0.85rem; color: #999;">Scripts are only stored for batch jobs and may expire after some time.</p>
+            </div>`;
         return;
     }
     
-    let fieldsHtml = '';
-    if (info.fields && Object.keys(info.fields).length > 0) {
-        fieldsHtml = '<div class="details-grid">';
-        for (const [key, value] of Object.entries(info.fields)) {
-            fieldsHtml += `
-                <div class="detail-item">
-                    <div class="detail-label">${escapeHtml(key)}</div>
-                    <div class="detail-value">${escapeHtml(value)}</div>
-                </div>
-            `;
-        }
-        fieldsHtml += '</div>';
-    }
-    
     content.innerHTML = `
-        <p style="color: #666; font-size: 0.9rem; margin-bottom: 20px; padding: 10px; background: #e7f3ff; border-radius: 6px;">
-            <i class="fas fa-tachometer-alt"></i> <strong>I/O & Performance:</strong> Disk I/O statistics and CPU time breakdown - shows if your job is I/O bound or compute bound (via <code>jobinfo</code> script)
-        </p>
-        ${fieldsHtml}
-        <div style="margin-top: 20px;">
-            <h3 style="margin-bottom: 15px;">Raw Output</h3>
-            <pre class="raw-output">${escapeHtml(info.raw_output || 'No output available')}</pre>
-        </div>
-    `;
+        <div style="position: relative;">
+            <button onclick="copyJobScript()" class="btn btn-sm" style="position: absolute; top: 10px; right: 10px; z-index: 10;">
+                <i class="fas fa-copy"></i> Copy
+            </button>
+            <pre class="raw-output" id="job-script-content" style="padding-top: 45px;">${escapeHtml(data.script)}</pre>
+        </div>`;
 }
 
-// Load raw job data
-async function loadJobRaw(jobid) {
-    const cacheKey = `raw_${jobid}`;
-    
-    // Check cache first (raw data is same as overview, so we can reuse it)
-    if (jobDetailsCache[cacheKey] || jobDetailsCache[`overview_${jobid}`]) {
-        debugLog(`Using cached raw data for job: ${jobid}`);
-        const details = jobDetailsCache[cacheKey] || jobDetailsCache[`overview_${jobid}`];
-        renderJobRawData(details);
-        return;
-    }
-    
-    try {
-        debugLog(`Fetching raw job data for job: ${jobid}`);
-        
-        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`);
-        const result = await response.json();
-        
-        debugLog('Raw job data response:', result);
-        
-        if (result.success) {
-            const details = result.data;
-            // Cache the data
-            jobDetailsCache[cacheKey] = details;
-            
-            renderJobRawData(details);
-        } else {
-            throw new Error(result.error || 'Failed to load raw job data');
-        }
-    } catch (error) {
-        document.getElementById('job-details-content').innerHTML = 
-            `<div class="error">Error loading raw job data: ${escapeHtml(error.message)}</div>`;
+// Copy job script to clipboard
+function copyJobScript() {
+    const scriptContent = document.getElementById('job-script-content');
+    if (scriptContent) {
+        navigator.clipboard.writeText(scriptContent.textContent).then(() => {
+            // Show brief feedback
+            const btn = document.querySelector('[onclick="copyJobScript()"]');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
+        });
     }
 }
 
-// Render raw job data (extracted for reusability)
-function renderJobRawData(details) {
-    const content = document.getElementById('job-details-content');
-    
-    const title = details.is_historical ? 'sacct -o ALL Output' : 'scontrol show jobid -dd Output';
-    const commandInfo = details.is_historical 
-        ? 'Complete historical job data from SLURM accounting database'
-        : 'Real-time detailed information from SLURM controller';
-    
-    content.innerHTML = `
-        <p style="color: #666; font-size: 0.9rem; margin-bottom: 20px; padding: 10px; background: #f8f9fa; border-radius: 6px;">
-            <i class="fas fa-terminal"></i> <strong>Raw SLURM Data:</strong> ${commandInfo} - useful for debugging and advanced analysis
-        </p>
-        <h3 style="margin-bottom: 15px;">${title}</h3>
-        <pre class="raw-output">${escapeHtml(details.raw_output || 'No output available')}</pre>
-    `;
-}
+// Make copy function globally accessible
+window.copyJobScript = copyJobScript;
 
 // Utility functions
 function showLoading(show) {

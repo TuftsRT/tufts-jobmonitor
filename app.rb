@@ -88,6 +88,20 @@ get '/api/job/:jobid/info' do
   end
 end
 
+# API endpoint for job script (batch script used to submit the job)
+get '/api/job/:jobid/script' do
+  content_type :json
+  
+  begin
+    jobid = params[:jobid]
+    script = JobParser.get_job_script(jobid)
+    { success: true, data: script }.to_json
+  rescue => e
+    status 500
+    { success: false, error: e.message }.to_json
+  end
+end
+
 # API endpoint for dashboard summary
 get '/api/summary' do
   content_type :json

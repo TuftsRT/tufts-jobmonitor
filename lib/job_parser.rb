@@ -362,6 +362,18 @@ module JobParser
     }
   end
 
+  # Get the batch script used to submit the job
+  def self.get_job_script(jobid)
+    # sacct --batch-script returns the script with a header, tail -n +3 skips the header
+    output = run_command("sacct -j #{jobid} --batch-script 2>/dev/null | tail -n +3")
+    
+    {
+      job_id: jobid,
+      script: output.strip.empty? ? nil : output,
+      available: !output.strip.empty?
+    }
+  end
+
   private
 
   # Parse GPU TRES format
