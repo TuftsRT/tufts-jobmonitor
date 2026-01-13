@@ -91,11 +91,31 @@ end
 # API endpoint for job script (batch script used to submit the job)
 get '/api/job/:jobid/script' do
   content_type :json
-  
+
   begin
     jobid = params[:jobid]
     script = JobParser.get_job_script(jobid)
     { success: true, data: script }.to_json
+  rescue => e
+    status 500
+    { success: false, error: e.message }.to_json
+  end
+end
+
+# API endpoint to cancel a job
+delete '/api/job/:jobid' do
+  content_type :json
+
+  begin
+    jobid = params[:jobid]
+    result = JobParser.cancel_job(jobid)
+
+    if result[:success]
+      { success: true, message: result[:message] }.to_json
+    else
+      status 500
+      { success: false, error: result[:message], stderr: result[:stderr] }.to_json
+    end
   rescue => e
     status 500
     { success: false, error: e.message }.to_json

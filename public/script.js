@@ -208,6 +208,9 @@ function renderCurrentJobs(jobs) {
                 <button class="btn btn-info" onclick="showJobDetails('${escapeHtml(job.job_id)}')">
                     <i class="fas fa-info-circle"></i> Details
                 </button>
+                <button class="btn btn-danger" onclick="deleteJob('${escapeHtml(job.job_id)}')">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
             </td>
         </tr>
     `).join('');
@@ -647,6 +650,125 @@ function copyJobScript() {
 
 // Make copy function globally accessible
 window.copyJobScript = copyJobScript;
+
+// Delete job function with confirmation
+async function deleteJob(jobid) {
+    // Show confirmation dialog
+    const confirmed = confirm(`Are you sure you want to cancel job ${jobid}?\n\nThis action cannot be undone.`);
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+        showLoading(true);
+
+        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`, {
+            method: 'DELETE'
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            // Optimistic UI update: immediately remove job from the list
+            currentJobs = currentJobs.filter(job => job.job_id !== jobid);
+
+            // Re-render the filtered list for instant feedback
+            filterCurrentJobs();
+
+            // Show success toast
+            showToast(`Job ${jobid} has been successfully cancelled.`, 'success', 'Job Cancelled');
+
+            // Wait 3 seconds before refetching to give SLURM time to process the cancellation
+            // This prevents the cancelled job from reappearing due to SLURM's processing delay
+            setTimeout(async () => {
+                await loadCurrentJobs();
+            }, 3000);
+        } else {
+            throw new Error(result.error || 'Failed to cancel job');
+        }
+    } catch (error) {
+        // Show error toast
+        showToast(`Failed to cancel job ${jobid}: ${error.message}`, 'error', 'Cancellation Failed');
+
+        // Refetch to restore correct state if cancellation failed
+        await loadCurrentJobs();
+    } finally {
+        showLoading(false);
+    }
+}
+
+// Make deleteJob function globally accessible
+window.deleteJob = deleteJob;
+
+// Toast notification system
+function showToast(message, type = 'info', title = null, duration = 5000) {
+    const container = document.getElementById('toast-container');
+
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+
+    // Determine icon based on type
+    const icons = {
+        success: 'fa-check-circle',
+        error: 'fa-exclamation-circle',
+        info: 'fa-info-circle',
+        warning: 'fa-exclamation-triangle'
+    };
+
+    const icon = icons[type] || icons.info;
+
+    // Determine default title based on type if not provided
+    if (!title) {
+        const titles = {
+            success: 'Success',
+            error: 'Error',
+            info: 'Information',
+            warning: 'Warning'
+        };
+        title = titles[type] || 'Notification';
+    }
+
+    // Build toast HTML
+    toast.innerHTML = `
+        <div class="toast-icon">
+            <i class="fas ${icon}"></i>
+        </div>
+        <div class="toast-content">
+            <div class="toast-title">${escapeHtml(title)}</div>
+            <div class="toast-message">${escapeHtml(message)}</div>
+        </div>
+        <button class="toast-close" onclick="dismissToast(this)">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+
+    // Add to container
+    container.appendChild(toast);
+
+    // Auto-dismiss after duration (if duration > 0)
+    if (duration > 0) {
+        setTimeout(() => {
+            dismissToast(toast.querySelector('.toast-close'));
+        }, duration);
+    }
+}
+
+// Dismiss a toast notification
+function dismissToast(closeButton) {
+    const toast = closeButton.closest('.toast');
+    if (toast) {
+        toast.classList.add('toast-exit');
+        setTimeout(() => {
+            toast.remove();
+        }, 300); // Match animation duration
+    }
+}
+
+// Make toast functions globally accessible
+window.showToast = showToast;
+window.dismissToast = dismissToast;
 
 // Utility functions
 function showLoading(show) {

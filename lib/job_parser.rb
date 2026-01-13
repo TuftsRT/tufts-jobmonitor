@@ -366,11 +366,33 @@ module JobParser
   def self.get_job_script(jobid)
     # sacct --batch-script returns the script with a header, tail -n +3 skips the header
     output = run_command("sacct -j #{jobid} --batch-script 2>/dev/null | tail -n +3")
-    
+
     {
       job_id: jobid,
       script: output.strip.empty? ? nil : output,
       available: !output.strip.empty?
+    }
+  end
+
+  # Cancel a running or pending job using scancel
+  def self.cancel_job(jobid)
+    stdout, stderr, status = Open3.capture3("scancel #{jobid}")
+
+    {
+      job_id: jobid,
+      success: status.success?,
+      message: status.success? ? "Job #{jobid} cancelled successfully" : "Failed to cancel job #{jobid}",
+      stdout: stdout,
+      stderr: stderr
+    }
+  rescue => e
+    STDERR.puts "[JobParser] Exception cancelling job: #{e.message}"
+    {
+      job_id: jobid,
+      success: false,
+      message: "Exception: #{e.message}",
+      stdout: "",
+      stderr: e.message
     }
   end
 
