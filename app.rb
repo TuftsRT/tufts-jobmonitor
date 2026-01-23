@@ -42,7 +42,7 @@ get '/api/job-history' do
       # Validate that range doesn't exceed 30 days
       start_date = Time.parse(start_time)
       end_date = Time.parse(end_time)
-      max_range = 30 * 24 * 60 * 60 # 30 days in seconds
+      max_range = 31 * 24 * 60 * 60 # 30 days + 1 day buffer
 
       if end_date - start_date > max_range
         status 400

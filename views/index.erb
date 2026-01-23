@@ -152,7 +152,6 @@
                     <span>to</span>
                     <input type="datetime-local" id="history-end-date" class="date-input">
                     <button id="apply-custom-range" class="apply-btn">Apply</button>
-                    <span id="date-range-error" class="date-error"></span>
                 </div>
                 <select id="history-state-filter" class="filter-select">
                     <option value="all">All States</option>
@@ -208,6 +207,12 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast-notification" class="toast" style="display: none;">
+        <span class="toast-message"></span>
+        <button class="toast-close" aria-label="Dismiss">&times;</button>
     </div>
 
     <script src="<%= request.script_name %>/script.js?v=<%= asset_v %>"></script>

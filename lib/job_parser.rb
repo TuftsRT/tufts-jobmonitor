@@ -78,7 +78,7 @@ module JobParser
       # Validate custom range doesn't exceed 30 days
       start_date = Time.parse(start_time)
       end_date = Time.parse(end_time)
-      max_range = max_days * 24 * 60 * 60
+      max_range = (max_days + 1) * 24 * 60 * 60 # + 1 day buffer
       raise ArgumentError, "Date range cannot exceed #{max_days} days" if end_date - start_date > max_range
 
       start_str = start_time

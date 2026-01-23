@@ -29,35 +29,65 @@ function formatDateTimeLocal(date) {
     return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
+// Toast notification with auto-dismiss
+let toastDismissTimeout = null;
+
+function showToast(message) {
+    const toast = document.getElementById('toast-notification');
+    const toastMessage = toast.querySelector('.toast-message');
+
+    // Clear any existing timeout
+    if (toastDismissTimeout) {
+        clearTimeout(toastDismissTimeout);
+    }
+
+    // Show the toast
+    toastMessage.textContent = message;
+    toast.style.display = 'flex';
+
+    // Auto-dismiss after 7 seconds
+    toastDismissTimeout = setTimeout(() => {
+        hideToast();
+    }, 7000);
+}
+
+function hideToast() {
+    const toast = document.getElementById('toast-notification');
+    toast.style.display = 'none';
+
+    if (toastDismissTimeout) {
+        clearTimeout(toastDismissTimeout);
+        toastDismissTimeout = null;
+    }
+}
+
 // Apply custom date range with validation
 function applyCustomDateRange() {
     const startInput = document.getElementById('history-start-date');
     const endInput = document.getElementById('history-end-date');
-    const errorSpan = document.getElementById('date-range-error');
 
     const startDate = new Date(startInput.value);
     const endDate = new Date(endInput.value);
 
-    // Clear previous error
-    errorSpan.textContent = '';
-
     // Validate dates
     if (!startInput.value || !endInput.value) {
-        errorSpan.textContent = 'Please select both dates';
+        showToast('Please select both dates');
         return;
     }
 
     if (startDate >= endDate) {
-        errorSpan.textContent = 'Start must be before end';
+        showToast('Start must be before end');
         return;
     }
 
-    const maxRange = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+    const maxRange = 31 * 24 * 60 * 60 * 1000; // 30 days + 1 day buffer
     if (endDate - startDate > maxRange) {
-        errorSpan.textContent = 'Range cannot exceed 30 days';
+        showToast('Range cannot exceed 30 days');
         return;
     }
 
+    // Hide any existing toast before loading
+    hideToast();
     loadJobHistory();
 }
 
@@ -116,7 +146,12 @@ function initializeEventListeners() {
     document.getElementById('apply-custom-range').addEventListener('click', () => {
         applyCustomDateRange();
     });
-    
+
+    // Toast close button
+    document.querySelector('#toast-notification .toast-close').addEventListener('click', () => {
+        hideToast();
+    });
+
     // Table sorting - setup for both current and history tables
     document.querySelectorAll('#current-jobs-table [data-sort]').forEach(th => {
         th.addEventListener('click', () => {
@@ -239,9 +274,8 @@ async function loadJobHistory() {
             renderHistoryJobs(historyJobs);
         } else {
             // Show error to user if custom range validation failed
-            const errorSpan = document.getElementById('date-range-error');
-            if (errorSpan && result.error) {
-                errorSpan.textContent = result.error;
+            if (result.error) {
+                showToast(result.error);
             }
         }
     } catch (error) {
