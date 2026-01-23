@@ -32,13 +32,32 @@ end
 # API endpoint for job history
 get '/api/job-history' do
   content_type :json
-  
+
   begin
-    # Get days parameter (default 7 days)
-    days = params[:days]&.to_i || 7
-    days = [days, 30].min # Max 30 days
-    
-    jobs = JobParser.get_job_history(days)
+    # Check for custom date range parameters
+    start_time = params[:start]
+    end_time = params[:end]
+
+    if start_time && end_time
+      # Validate that range doesn't exceed 30 days
+      start_date = Time.parse(start_time)
+      end_date = Time.parse(end_time)
+      max_range = 30 * 24 * 60 * 60 # 30 days in seconds
+
+      if end_date - start_date > max_range
+        status 400
+        return { success: false, error: 'Date range cannot exceed 30 days' }.to_json
+      end
+
+      jobs = JobParser.get_job_history(start_time: start_time, end_time: end_time)
+    else
+      # Get days parameter (default 7 days)
+      days = params[:days]&.to_i || 7
+      days = [days, 30].min # Max 30 days
+
+      jobs = JobParser.get_job_history(days: days)
+    end
+
     { success: true, data: jobs }.to_json
   rescue => e
     status 500

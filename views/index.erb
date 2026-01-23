@@ -143,17 +143,23 @@
                 <input type="text" id="history-job-search" class="search-input" placeholder="Search job history...">
                 <select id="history-days" class="filter-select">
                     <option value="1">Last 24 Hours</option>
-                    <option value="3">Last 3 Days</option>
                     <option value="7" selected>Last 7 Days</option>
-                    <option value="14">Last 14 Days</option>
                     <option value="30">Last 30 Days</option>
+                    <option value="custom">Custom Range</option>
                 </select>
+                <div id="custom-date-range" class="custom-date-range" style="display: none;">
+                    <input type="datetime-local" id="history-start-date" class="date-input">
+                    <span>to</span>
+                    <input type="datetime-local" id="history-end-date" class="date-input">
+                    <button id="apply-custom-range" class="apply-btn">Apply</button>
+                    <span id="date-range-error" class="date-error"></span>
+                </div>
                 <select id="history-state-filter" class="filter-select">
                     <option value="all">All States</option>
-                    <option value="COMPLETED">Completed Only</option>
-                    <option value="FAILED">Failed Only</option>
-                    <option value="CANCELLED">Cancelled Only</option>
-                    <option value="TIMEOUT">Timeout Only</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="FAILED">Failed</option>
+                    <option value="CANCELLED">Cancelled</option>
+                    <option value="TIMEOUT">Timeout</option>
                 </select>
             </div>
             <div class="table-wrapper">

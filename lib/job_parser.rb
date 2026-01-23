@@ -68,14 +68,30 @@ module JobParser
   end
 
   # Get job history using sacct
-  def self.get_job_history(days = 7)
-    # Calculate date range
-    end_date = Time.now
-    start_date = end_date - (days * 24 * 60 * 60)
-    
-    start_str = start_date.strftime('%Y-%m-%d')
-    # Add 1 day to end_str to include today's jobs (sacct --endtime is exclusive)
-    end_str = (end_date + 86400).strftime('%Y-%m-%d')
+  # Can be called with days (relative) or start_time/end_time (absolute)
+  # Maximum range is 30 days
+  def self.get_job_history(days: 7, start_time: nil, end_time: nil)
+    max_days = 30
+
+    # Use custom date range if provided, otherwise calculate from days
+    if start_time && end_time
+      # Validate custom range doesn't exceed 30 days
+      start_date = Time.parse(start_time)
+      end_date = Time.parse(end_time)
+      max_range = max_days * 24 * 60 * 60
+      raise ArgumentError, "Date range cannot exceed #{max_days} days" if end_date - start_date > max_range
+
+      start_str = start_time
+      end_str = end_time
+    else
+      # Cap days at max_days
+      days = [days, max_days].min
+      end_date = Time.now
+      start_date = end_date - (days * 24 * 60 * 60)
+      start_str = start_date.strftime('%Y-%m-%d')
+      # Add 1 day to end_str to include today's jobs (sacct --endtime is exclusive)
+      end_str = (end_date + 86400).strftime('%Y-%m-%d')
+    end
     
     # Use sacct to get historical jobs (including ReqTRES for GPU info)
     output = run_command(

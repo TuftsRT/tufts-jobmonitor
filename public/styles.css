@@ -300,6 +300,52 @@ input:checked + .slider:before {
     cursor: pointer;
 }
 
+/* Custom Date Range */
+.custom-date-range {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.custom-date-range span {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.date-input {
+    padding: 8px 12px;
+    border: 2px solid #e9ecef;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    transition: border-color 0.3s ease;
+}
+
+.date-input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.apply-btn {
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: opacity 0.3s ease;
+}
+
+.apply-btn:hover {
+    opacity: 0.9;
+}
+
+.date-error {
+    color: #dc3545;
+    font-size: 0.85rem;
+}
+
 /* Tables */
 .table-wrapper {
     overflow-x: auto;

@@ -19,6 +19,48 @@ function debugLog(message, data) {
     }
 }
 
+// Format date for datetime-local input
+function formatDateTimeLocal(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+// Apply custom date range with validation
+function applyCustomDateRange() {
+    const startInput = document.getElementById('history-start-date');
+    const endInput = document.getElementById('history-end-date');
+    const errorSpan = document.getElementById('date-range-error');
+
+    const startDate = new Date(startInput.value);
+    const endDate = new Date(endInput.value);
+
+    // Clear previous error
+    errorSpan.textContent = '';
+
+    // Validate dates
+    if (!startInput.value || !endInput.value) {
+        errorSpan.textContent = 'Please select both dates';
+        return;
+    }
+
+    if (startDate >= endDate) {
+        errorSpan.textContent = 'Start must be before end';
+        return;
+    }
+
+    const maxRange = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+    if (endDate - startDate > maxRange) {
+        errorSpan.textContent = 'Range cannot exceed 30 days';
+        return;
+    }
+
+    loadJobHistory();
+}
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     debugLog('App initializing...', { debug_mode: DEBUG });
@@ -54,7 +96,25 @@ function initializeEventListeners() {
     document.getElementById('history-job-search').addEventListener('input', filterHistoryJobs);
     document.getElementById('history-state-filter').addEventListener('change', filterHistoryJobs);
     document.getElementById('history-days').addEventListener('change', () => {
-        loadJobHistory();
+        const value = document.getElementById('history-days').value;
+        const customRangeDiv = document.getElementById('custom-date-range');
+
+        if (value === 'custom') {
+            customRangeDiv.style.display = 'flex';
+            // Set default dates: end = now, start = 7 days ago
+            const now = new Date();
+            const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            document.getElementById('history-end-date').value = formatDateTimeLocal(now);
+            document.getElementById('history-start-date').value = formatDateTimeLocal(sevenDaysAgo);
+        } else {
+            customRangeDiv.style.display = 'none';
+            loadJobHistory();
+        }
+    });
+
+    // Custom date range apply button
+    document.getElementById('apply-custom-range').addEventListener('click', () => {
+        applyCustomDateRange();
     });
     
     // Table sorting - setup for both current and history tables
@@ -149,24 +209,40 @@ async function loadCurrentJobs() {
 // Load job history
 async function loadJobHistory() {
     try {
-        const days = document.getElementById('history-days').value;
-        debugLog(`Fetching job history (last ${days} days)...`);
-        
-        const response = await fetch(`${window.APP_BASE_PATH}/api/job-history?days=${days}`);
+        const daysSelect = document.getElementById('history-days').value;
+        let url;
+
+        if (daysSelect === 'custom') {
+            const startDate = document.getElementById('history-start-date').value;
+            const endDate = document.getElementById('history-end-date').value;
+            debugLog(`Fetching job history (custom range: ${startDate} to ${endDate})...`);
+            url = `${window.APP_BASE_PATH}/api/job-history?start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}`;
+        } else {
+            debugLog(`Fetching job history (last ${daysSelect} days)...`);
+            url = `${window.APP_BASE_PATH}/api/job-history?days=${daysSelect}`;
+        }
+
+        const response = await fetch(url);
         const result = await response.json();
-        
+
         debugLog('Job history response:', result);
-        
+
         if (result.success) {
             historyJobs = result.data;
             debugLog(`Loaded ${historyJobs.length} historical jobs:`, historyJobs);
-            
+
             // Log detailed info for first job if available
             if (DEBUG && historyJobs.length > 0) {
                 console.log('[JobApp Debug] Sample history job:', historyJobs[0]);
             }
-            
+
             renderHistoryJobs(historyJobs);
+        } else {
+            // Show error to user if custom range validation failed
+            const errorSpan = document.getElementById('date-range-error');
+            if (errorSpan && result.error) {
+                errorSpan.textContent = result.error;
+            }
         }
     } catch (error) {
         console.error('Failed to load job history:', error);
