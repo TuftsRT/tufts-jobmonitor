@@ -233,7 +233,7 @@ async function loadCurrentJobs() {
                 console.log('[JobApp Debug] Sample current job:', currentJobs[0]);
             }
             
-            renderCurrentJobs(currentJobs);
+            filterCurrentJobs();
         }
     } catch (error) {
         console.error('Failed to load current jobs:', error);
@@ -271,7 +271,7 @@ async function loadJobHistory() {
                 console.log('[JobApp Debug] Sample history job:', historyJobs[0]);
             }
 
-            renderHistoryJobs(historyJobs);
+            filterHistoryJobs();
         } else {
             // Show error to user if custom range validation failed
             if (result.error) {
