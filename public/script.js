@@ -369,11 +369,12 @@ function filterCurrentJobs() {
             job.partition.toLowerCase().includes(searchTerm) ||
             job.node_list.toLowerCase().includes(searchTerm);
         
-        const matchesState = stateFilter === 'all' || job.state === stateFilter;
-        
+        const matchesState = stateFilter === 'all' ||
+            job.state.toUpperCase().startsWith(stateFilter.toUpperCase());
+
         return matchesSearch && matchesState;
     });
-    
+
     renderCurrentJobs(filtered);
 }
 
@@ -389,11 +390,12 @@ function filterHistoryJobs() {
             job.partition.toLowerCase().includes(searchTerm) ||
             job.node_list.toLowerCase().includes(searchTerm);
         
-        const matchesState = stateFilter === 'all' || job.state === stateFilter;
-        
+        const matchesState = stateFilter === 'all' ||
+            job.state.toUpperCase().startsWith(stateFilter.toUpperCase());
+
         return matchesSearch && matchesState;
     });
-    
+
     renderHistoryJobs(filtered);
 }
 
