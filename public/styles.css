@@ -490,6 +490,11 @@ input:checked + .slider:before {
     color: #721c24;
 }
 
+.state-out_of_memory {
+    background: #e2d5f1;
+    color: #4a235a;
+}
+
 /* Loading Overlay */
 .loading-overlay {
     position: fixed;

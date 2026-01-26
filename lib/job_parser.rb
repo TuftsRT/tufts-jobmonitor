@@ -102,18 +102,25 @@ module JobParser
     
     jobs = []
     job_memory = {}  # Track max memory for each main job
-    
-    # First pass: collect memory from job steps
+    job_oom = {}     # Track if any step had OUT_OF_MEMORY state
+
+    # First pass: collect memory from job steps and check for OOM
     output.each_line do |line|
       # Use -1 limit to keep trailing empty fields
       parts = line.strip.split('|', -1)
       next if parts.length < 13
-      
+
       job_id = parts[0]
-      
+      state = parts[3] || ''
+
       # Extract main job ID (before the dot)
       main_job_id = job_id.split('.').first
-      
+
+      # Track if any step had OUT_OF_MEMORY state
+      if state.upcase.include?('OUT_OF_MEMORY')
+        job_oom[main_job_id] = true
+      end
+
       # Track the maximum memory usage across all steps
       max_rss_raw = parts[7] || ''
       if !max_rss_raw.strip.empty?
@@ -151,7 +158,13 @@ module JobParser
       memory_info = job_memory[job_id]
       max_rss = memory_info ? memory_info[:formatted] : 'N/A'
       max_rss_raw = memory_info ? memory_info[:raw] : ''
-      
+
+      # If any step had OUT_OF_MEMORY, use that state (more informative than FAILED)
+      state = parts[3]
+      if job_oom[job_id]
+        state = 'OUT_OF_MEMORY'
+      end
+
       req_mem = parts[8]
       
       # Parse GPUs from ReqTRES field (index 13)
@@ -167,7 +180,7 @@ module JobParser
         job_id: job_id,
         name: parts[1],
         partition: parts[2],
-        state: parts[3],
+        state: state,
         elapsed: parts[4],
         start: parts[5],
         end: parts[6],
@@ -252,14 +265,17 @@ module JobParser
     # Parse first line (main job, not .batch or .extern)
     lines = output.strip.split("\n")
     main_job_line = lines.find { |line| !line.include?('.') && line.start_with?(jobid) }
-    
+
+    # Check if any job step has OUT_OF_MEMORY state
+    has_oom = lines.any? { |line| line.split('|')[5]&.upcase&.include?('OUT_OF_MEMORY') }
+
     if main_job_line
       fields = main_job_line.split('|')
       details[:job_name] = fields[1]
       details[:user] = fields[2]
       details[:account] = fields[3]
       details[:partition] = fields[4]
-      details[:state] = fields[5]
+      details[:state] = has_oom ? 'OUT_OF_MEMORY' : fields[5]
       details[:submit_time] = fields[6]
       details[:start_time] = fields[7]
       details[:end_time] = fields[8]

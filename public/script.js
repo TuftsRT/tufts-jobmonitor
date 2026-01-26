@@ -918,6 +918,7 @@ function getStateClass(state) {
     if (s.includes('failed') || s === 'f') return 'failed';
     if (s.includes('cancelled') || s === 'ca') return 'cancelled';
     if (s.includes('timeout') || s === 'to') return 'timeout';
+    if (s.includes('out_of_memory') || s === 'oom') return 'out_of_memory';
     return 'unknown';
 }
 
