@@ -4,4 +4,5 @@ description: Monitor your SLURM jobs including running, pending, and historical 
 icon: fa://briefcase
 category: Jobs
 subcategory: Monitoring
+new_window: false
 
