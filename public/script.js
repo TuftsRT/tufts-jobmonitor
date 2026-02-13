@@ -305,7 +305,7 @@ function renderCurrentJobs(jobs) {
     tbody.innerHTML = jobs.map(job => `
         <tr>
             <td><strong>${escapeHtml(job.job_id)}</strong></td>
-            <td class="truncate-name" title="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
+            <td class="truncate-name" data-fullname="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
             <td>${escapeHtml(job.partition)}</td>
             <td><span class="state-badge state-${job.state.toLowerCase()}">${job.state_name}</span></td>
             <td>${escapeHtml(job.time_used)}</td>
@@ -338,7 +338,7 @@ function renderHistoryJobs(jobs) {
     tbody.innerHTML = jobs.map(job => `
         <tr>
             <td><strong>${escapeHtml(job.job_id)}</strong></td>
-            <td class="truncate-name" title="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
+            <td class="truncate-name" data-fullname="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
             <td>${escapeHtml(job.partition)}</td>
             <td><span class="state-badge state-${getStateClass(job.state)}">${escapeHtml(job.state)}</span></td>
             <td>${escapeHtml(job.elapsed)}</td>
@@ -960,8 +960,40 @@ function initTooltips() {
     });
 }
 
+// Tooltip for truncated job names
+function initNameTooltips() {
+    let tooltip = document.getElementById('name-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'name-tooltip';
+        tooltip.className = 'name-tooltip';
+        document.body.appendChild(tooltip);
+    }
+
+    document.addEventListener('mouseenter', (e) => {
+        const cell = e.target.closest('.truncate-name');
+        if (!cell) return;
+        const fullName = cell.getAttribute('data-fullname');
+        if (!fullName) return;
+
+        tooltip.textContent = fullName;
+        tooltip.style.display = 'block';
+
+        const rect = cell.getBoundingClientRect();
+        tooltip.style.left = rect.left + 'px';
+        tooltip.style.top = rect.bottom + 'px';
+    }, true);
+
+    document.addEventListener('mouseleave', (e) => {
+        const cell = e.target.closest('.truncate-name');
+        if (!cell) return;
+        tooltip.style.display = 'none';
+    }, true);
+}
+
 // Initialize tooltips when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     initTooltips();
+    initNameTooltips();
 });
 
