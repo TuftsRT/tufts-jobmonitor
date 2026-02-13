@@ -305,7 +305,7 @@ function renderCurrentJobs(jobs) {
     tbody.innerHTML = jobs.map(job => `
         <tr>
             <td><strong>${escapeHtml(job.job_id)}</strong></td>
-            <td>${escapeHtml(job.name)}</td>
+            <td class="truncate-name" title="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
             <td>${escapeHtml(job.partition)}</td>
             <td><span class="state-badge state-${job.state.toLowerCase()}">${job.state_name}</span></td>
             <td>${escapeHtml(job.time_used)}</td>
@@ -338,7 +338,7 @@ function renderHistoryJobs(jobs) {
     tbody.innerHTML = jobs.map(job => `
         <tr>
             <td><strong>${escapeHtml(job.job_id)}</strong></td>
-            <td>${escapeHtml(job.name)}</td>
+            <td class="truncate-name" title="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
             <td>${escapeHtml(job.partition)}</td>
             <td><span class="state-badge state-${getStateClass(job.state)}">${escapeHtml(job.state)}</span></td>
             <td>${escapeHtml(job.elapsed)}</td>

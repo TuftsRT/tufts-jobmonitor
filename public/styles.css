@@ -442,6 +442,13 @@ input:checked + .slider:before {
     border-bottom: 1px solid #e9ecef;
 }
 
+.jobs-table td.truncate-name {
+    max-width: 200px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .jobs-table tbody tr {
     transition: background-color 0.2s ease;
 }
