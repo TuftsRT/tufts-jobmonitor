@@ -307,7 +307,7 @@ function renderCurrentJobs(jobs) {
             <td><strong>${escapeHtml(job.job_id)}</strong></td>
             <td class="truncate-name" data-fullname="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
             <td class="d-no-small" >${escapeHtml(job.partition)}</td>
-            <td><span class="state-badge state-${job.state.toLowerCase()}">${job.state_name}</span></td>
+            <td><span class="state-badge state-${getStateClass(job.state)}">${job.state_name}</span></td>
             <td>${escapeHtml(job.time_used)}</td>
             <td>${escapeHtml(job.time_limit)}</td>
             <td class="d-no-small d-no-medium" >${job.nodes}</td>
