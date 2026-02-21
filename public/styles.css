@@ -703,6 +703,7 @@ tbody td {
     font-size: 0.85rem;
     font-weight: 600;
     text-transform: uppercase;
+    background: #e2e3e5;
 }
 
 .state-running {
@@ -710,12 +711,12 @@ tbody td {
     color: #155724;
 }
 
-.state-pending {
+.state-pending, .state-configuring, .state-requeued {
     background: #fff3cd;
     color: #856404;
 }
 
-.state-completed {
+.state-completed, .state-completing {
     background: #d1ecf1;
     color: #0c5460;
 }
@@ -725,7 +726,7 @@ tbody td {
     color: #721c24;
 }
 
-.state-cancelled {
+.state-cancelled, .state-preempted {
     background: #e2e3e5;
     color: #383d41;
 }
