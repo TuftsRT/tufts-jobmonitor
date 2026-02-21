@@ -171,7 +171,7 @@ function setupAutoRefresh() {
     clearInterval(autoRefreshInterval);
     autoRefreshInterval = setInterval(() => {
         loadAllData();
-    }, 30000); // 30 seconds
+    }, 120000); // 120 seconds
 }
 
 // Load all data
@@ -319,7 +319,7 @@ function renderCurrentJobs(jobs) {
                     <i class="fas fa-info-circle"></i> Details
                 </button>
                 <button class="btn btn-danger" onclick="deleteJob('${escapeHtml(job.job_id)}')">
-                    <i class="fas fa-trash"></i> Delete
+                    <i class="fas fa-trash"></i> Cancel
                 </button>
             </td>
         </tr>

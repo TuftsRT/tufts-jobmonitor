@@ -4,7 +4,7 @@
     <!-- Version: <%= Time.now.to_i %> -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Job Monitor Dashboard</title>
+    <title>Active Jobs Dashboard</title>
     <% begin; asset_v = File.mtime(File.expand_path('../public/script.js', __dir__)).to_i; css_v = File.mtime(File.expand_path('../public/styles.css', __dir__)).to_i; rescue; asset_v = css_v = Time.now.to_i; end %>
     <link rel="stylesheet" href="<%= request.script_name %>/styles.css?v=<%= css_v %>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -18,7 +18,7 @@
     <div class="container">
         <!-- Header -->
         <header class="header">
-            <h1><i class="fas fa-briefcase"></i> Job Monitor</h1>
+            <h1><i class="fas fa-briefcase"></i> Active Jobs</h1>
             <div class="header-controls">
                 <div class="last-update">
                     Last updated: <span id="last-update-time">Never</span>
@@ -30,7 +30,7 @@
                     <input type="checkbox" id="auto-refresh-toggle" checked>
                     <span class="slider"></span>
                 </label>
-                <span class="auto-refresh-label">Auto-refresh (30s)</span>
+                <span class="auto-refresh-label">Auto-refresh (120s)</span>
             </div>
         </header>
 
