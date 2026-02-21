@@ -303,19 +303,19 @@ function renderCurrentJobs(jobs) {
     }
     
     tbody.innerHTML = jobs.map(job => `
-        <tr>
+        <tr onclick="showJobDetails('${escapeHtml(job.job_id)}')" >
             <td><strong>${escapeHtml(job.job_id)}</strong></td>
             <td class="truncate-name" data-fullname="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
-            <td>${escapeHtml(job.partition)}</td>
+            <td class="d-no-small" >${escapeHtml(job.partition)}</td>
             <td><span class="state-badge state-${job.state.toLowerCase()}">${job.state_name}</span></td>
             <td>${escapeHtml(job.time_used)}</td>
             <td>${escapeHtml(job.time_limit)}</td>
-            <td>${job.nodes}</td>
-            <td>${job.cpus}</td>
-            <td>${job.gpus}</td>
-            <td>${escapeHtml(job.node_list)}</td>
+            <td class="d-no-small d-no-medium" >${job.nodes}</td>
+            <td class="d-no-small d-no-medium" >${job.cpus}</td>
+            <td class="d-no-small d-no-medium" >${job.gpus}</td>
+            <td class="d-no-small" >${escapeHtml(job.node_list)}</td>
             <td>
-                <button class="btn btn-info" onclick="showJobDetails('${escapeHtml(job.job_id)}')">
+                <button class="btn btn-info d-no-small" onclick="showJobDetails('${escapeHtml(job.job_id)}')">
                     <i class="fas fa-info-circle"></i> Details
                 </button>
                 <button class="btn btn-danger" onclick="deleteJob('${escapeHtml(job.job_id)}')">
@@ -336,19 +336,19 @@ function renderHistoryJobs(jobs) {
     }
     
     tbody.innerHTML = jobs.map(job => `
-        <tr>
+        <tr  onclick="showJobDetails('${escapeHtml(job.job_id)}')" >
             <td><strong>${escapeHtml(job.job_id)}</strong></td>
             <td class="truncate-name" data-fullname="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
-            <td>${escapeHtml(job.partition)}</td>
+            <td class="d-no-small" >${escapeHtml(job.partition)}</td>
             <td><span class="state-badge state-${getStateClass(job.state)}">${escapeHtml(job.state)}</span></td>
             <td>${escapeHtml(job.elapsed)}</td>
-            <td>${escapeHtml(job.start)}</td>
-            <td>${escapeHtml(job.end)}</td>
-            <td>${escapeHtml(job.max_rss)}</td>
-            <td>${job.nodes}</td>
-            <td>${job.cpus}</td>
-            <td>${job.gpus || 0}</td>
-            <td>
+            <td>${escapeHtml(job.start.replace('T',' '))}</td>
+            <td class="d-no-small" >${escapeHtml(job.end.replace('T',' '))}</td>
+            <td class="d-no-small d-no-medium" >${escapeHtml(job.max_rss)}</td>
+            <td class="d-no-small d-no-medium" >${job.nodes}</td>
+            <td class="d-no-small d-no-medium" >${job.cpus}</td>
+            <td class="d-no-small d-no-medium" >${job.gpus || 0}</td>
+            <td class="d-no-small d-no-medium" >
                 <button class="btn btn-info" onclick="showJobDetails('${escapeHtml(job.job_id)}')">
                     <i class="fas fa-info-circle"></i> Details
                 </button>
@@ -739,7 +739,7 @@ function renderJobScriptData(data) {
     
     content.innerHTML = `
         <div style="position: relative;">
-            <button onclick="copyJobScript()" class="btn btn-sm" style="position: absolute; top: 10px; right: 10px; z-index: 10;">
+            <button onclick="copyJobScript()" class="btn btn-sm" style="position: absolute; top: 10px; right: 20px; z-index: 10;">
                 <i class="fas fa-copy"></i> Copy
             </button>
             <pre class="raw-output" id="job-script-content" style="padding-top: 45px;">${escapeHtml(data.script)}</pre>
@@ -765,6 +765,8 @@ window.copyJobScript = copyJobScript;
 
 // Delete job function with confirmation
 async function deleteJob(jobid) {
+    event.stopPropagation();
+
     // Show confirmation dialog
     const confirmed = confirm(`Are you sure you want to cancel job ${jobid}?\n\nThis action cannot be undone.`);
 
