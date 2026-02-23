@@ -229,7 +229,7 @@ module JobParser
     details[:std_err] = output[/StdErr=(\S+)/, 1]
     details[:nodes] = output[/NumNodes=(\S+)/, 1]
     details[:cpus] = output[/NumCPUs=(\S+)/, 1]
-    details[:node_list] = output[/(?<!\w)NodeList=(\S+)/, 1]
+    details[:node_list] = output[/NodeList=(\S+)/, 1]
     details[:reason] = output[/Reason=([^\n]+)/, 1]&.strip
     
     # Parse TRES (including GPUs)
