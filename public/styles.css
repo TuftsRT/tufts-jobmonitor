@@ -706,6 +706,20 @@ tbody td {
     background: #e2e3e5;
 }
 
+.user-limit-warning {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 6px;
+    color: var(--warning);
+    font-size: 0.9rem;
+    cursor: help;
+}
+
+.user-limit-warning-icon {
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
 .state-running {
     background: #d4edda;
     color: #155724;
