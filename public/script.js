@@ -4,10 +4,20 @@ let historyJobs = [];
 let autoRefreshInterval = null;
 let currentSortColumn = null;
 let currentSortDirection = 'asc';
-let historySortColumn = null;
-let historySortDirection = 'asc';
+let historySortColumn = 'start';
+let historySortDirection = 'desc';
 let currentJobId = null; // Track the currently viewed job in the modal
 let jobDetailsCache = {}; // Cache job details data for faster tab switching
+
+// Check if a value represents a missing/empty field
+function isMissingValue(val) {
+    if (val == null) return true;
+    if (typeof val === 'string') {
+        const lower = val.toLowerCase().trim();
+        return lower === 'none' || lower === 'n/a' || lower === '';
+    }
+    return false;
+}
 
 // Debug mode - enabled with ?debug=1 in URL
 const DEBUG = new URLSearchParams(window.location.search).get('debug') === '1';
@@ -271,6 +281,27 @@ async function loadJobHistory() {
                 console.log('[JobApp Debug] Sample history job:', historyJobs[0]);
             }
 
+            // Apply current sort order (default: most recent first)
+            if (historySortColumn) {
+                historyJobs.sort((a, b) => {
+                    let aVal = a[historySortColumn];
+                    let bVal = b[historySortColumn];
+                    // Push missing values (None, N/A) to the bottom
+                    const aMissing = isMissingValue(aVal);
+                    const bMissing = isMissingValue(bVal);
+                    if (aMissing && bMissing) return 0;
+                    if (aMissing) return 1;
+                    if (bMissing) return -1;
+                    if (typeof aVal === 'string') {
+                        aVal = aVal.toLowerCase();
+                        bVal = bVal.toLowerCase();
+                    }
+                    if (aVal < bVal) return historySortDirection === 'asc' ? -1 : 1;
+                    if (aVal > bVal) return historySortDirection === 'asc' ? 1 : -1;
+                    return 0;
+                });
+            }
+
             filterHistoryJobs();
         } else {
             // Show error to user if custom range validation failed
@@ -457,17 +488,22 @@ function sortHistoryJobs(column) {
     historyJobs.sort((a, b) => {
         let aVal = a[column];
         let bVal = b[column];
-        
+        // Push missing values (None, N/A) to the bottom
+        const aMissing = isMissingValue(aVal);
+        const bMissing = isMissingValue(bVal);
+        if (aMissing && bMissing) return 0;
+        if (aMissing) return 1;
+        if (bMissing) return -1;
         if (typeof aVal === 'string') {
             aVal = aVal.toLowerCase();
             bVal = bVal.toLowerCase();
         }
-        
+
         if (aVal < bVal) return historySortDirection === 'asc' ? -1 : 1;
         if (aVal > bVal) return historySortDirection === 'asc' ? 1 : -1;
         return 0;
     });
-    
+
     filterHistoryJobs();
 }
 
