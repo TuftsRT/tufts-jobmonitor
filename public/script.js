@@ -4,10 +4,20 @@ let historyJobs = [];
 let autoRefreshInterval = null;
 let currentSortColumn = null;
 let currentSortDirection = 'asc';
-let historySortColumn = null;
-let historySortDirection = 'asc';
+let historySortColumn = 'start';
+let historySortDirection = 'desc';
 let currentJobId = null; // Track the currently viewed job in the modal
 let jobDetailsCache = {}; // Cache job details data for faster tab switching
+
+// Check if a value represents a missing/empty field
+function isMissingValue(val) {
+    if (val == null) return true;
+    if (typeof val === 'string') {
+        const lower = val.toLowerCase().trim();
+        return lower === 'none' || lower === 'n/a' || lower === '';
+    }
+    return false;
+}
 
 // Debug mode - enabled with ?debug=1 in URL
 const DEBUG = new URLSearchParams(window.location.search).get('debug') === '1';
@@ -271,6 +281,27 @@ async function loadJobHistory() {
                 console.log('[JobApp Debug] Sample history job:', historyJobs[0]);
             }
 
+            // Apply current sort order (default: most recent first)
+            if (historySortColumn) {
+                historyJobs.sort((a, b) => {
+                    let aVal = a[historySortColumn];
+                    let bVal = b[historySortColumn];
+                    // Push missing values (None, N/A) to the bottom
+                    const aMissing = isMissingValue(aVal);
+                    const bMissing = isMissingValue(bVal);
+                    if (aMissing && bMissing) return 0;
+                    if (aMissing) return 1;
+                    if (bMissing) return -1;
+                    if (typeof aVal === 'string') {
+                        aVal = aVal.toLowerCase();
+                        bVal = bVal.toLowerCase();
+                    }
+                    if (aVal < bVal) return historySortDirection === 'asc' ? -1 : 1;
+                    if (aVal > bVal) return historySortDirection === 'asc' ? 1 : -1;
+                    return 0;
+                });
+            }
+
             filterHistoryJobs();
         } else {
             // Show error to user if custom range validation failed
@@ -296,18 +327,37 @@ function updateSummaryStats(data) {
 // Render current jobs table
 function renderCurrentJobs(jobs) {
     const tbody = document.getElementById('current-jobs-table-body');
+    debugLog('renderCurrentJobs called', {
+        count: jobs.length,
+        contains_user_limit_marker: renderCurrentJobs.toString().includes('user-limit-warning')
+    });
     
     if (jobs.length === 0) {
         tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">No current jobs found</td></tr>';
         return;
     }
     
-    tbody.innerHTML = jobs.map(job => `
+    tbody.innerHTML = jobs.map(job => {
+        const warning = getUserLimitWarning(job);
+        debugLog('Evaluating current job warning state', {
+            job_id: job.job_id,
+            state: job.state,
+            reason: job.reason,
+            warning_match: !!warning,
+            warning_reason_code: warning ? warning.reasonCode : null
+        });
+        const stateLabel = job.state_name;
+        return `
         <tr onclick="showJobDetails('${escapeHtml(job.job_id)}')" >
             <td><strong>${escapeHtml(job.job_id)}</strong></td>
             <td class="truncate-name" data-fullname="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
             <td class="d-no-small" >${escapeHtml(job.partition)}</td>
-            <td><span class="state-badge state-${getStateClass(job.state)}">${job.state_name}</span></td>
+            <td>
+                <span class="state-badge state-${getStateClass(job.state)}">${escapeHtml(stateLabel)}</span>
+                ${warning ? `<span class="user-limit-warning" data-tooltip="${escapeHtml(warning.tooltip)}" aria-label="${escapeHtml(warning.tooltip)}">
+                        <span class="user-limit-warning-icon" aria-hidden="true">&#9888;</span>
+                    </span>` : ''}
+            </td>
             <td>${escapeHtml(job.time_used)}</td>
             <td>${escapeHtml(job.time_limit)}</td>
             <td class="d-no-small d-no-medium" >${job.nodes}</td>
@@ -323,7 +373,8 @@ function renderCurrentJobs(jobs) {
                 </button>
             </td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // Render history jobs table
@@ -437,17 +488,22 @@ function sortHistoryJobs(column) {
     historyJobs.sort((a, b) => {
         let aVal = a[column];
         let bVal = b[column];
-        
+        // Push missing values (None, N/A) to the bottom
+        const aMissing = isMissingValue(aVal);
+        const bMissing = isMissingValue(bVal);
+        if (aMissing && bMissing) return 0;
+        if (aMissing) return 1;
+        if (bMissing) return -1;
         if (typeof aVal === 'string') {
             aVal = aVal.toLowerCase();
             bVal = bVal.toLowerCase();
         }
-        
+
         if (aVal < bVal) return historySortDirection === 'asc' ? -1 : 1;
         if (aVal > bVal) return historySortDirection === 'asc' ? 1 : -1;
         return 0;
     });
-    
+
     filterHistoryJobs();
 }
 
@@ -911,6 +967,46 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+const USER_LIMIT_REASON_DETAILS = {
+    QOSMaxBBPerUser: 'Burst buffer request exceeds per-user maximum for this QOS.',
+    QOSMaxBillingPerUser: 'Billing request exceeds per-user maximum for this QOS.',
+    QOSMaxCpuPerUserLimit: 'CPU request exceeds per-user maximum for this QOS.',
+    QOSMaxEnergyPerUser: 'Energy request exceeds per-user maximum for this QOS.',
+    QOSMaxGRESPerUser: 'GRES request exceeds per-user maximum for this QOS.',
+    QOSMaxJobsPerUserLimit: 'User has reached max running jobs for this QOS.',
+    QOSMaxLicensePerUser: 'License request exceeds per-user maximum for this QOS.',
+    QOSMaxMemoryPerUser: 'Memory request exceeds per-user maximum for this QOS.',
+    QOSMaxNodePerUserLimit: 'Node request exceeds per-user maximum for this QOS.',
+    QOSMaxSubmitJobPerUserLimit: 'User has reached max running/pending jobs for this QOS.',
+    QOSMaxUnknownPerUser: 'Unknown resource request exceeds per-user maximum for this QOS.'
+};
+
+function getUserLimitWarning(job) {
+    if (!job || job.state !== 'PD') return null;
+    const reason = (job.reason || '').trim();
+    if (!reason) return null;
+
+    const reasonCode = reason.split(',')[0].trim();
+    // Slurm reason codes are often like QOSMaxCpuPerUserLimit, QOSMaxGRESPerUser, etc.
+    // Match "Max...PerUser" patterns instead of only exact "MaxPerUser".
+    const matchesUserLimit = /Max.*PerUser/i.test(reasonCode);
+    if (!matchesUserLimit) {
+        debugLog('Pending job reason does not match MaxPerUser', {
+            job_id: job.job_id,
+            reason,
+            reason_code: reasonCode
+        });
+        return null;
+    }
+
+    const description = USER_LIMIT_REASON_DETAILS[reasonCode];
+    const tooltip = description
+        ? `Pending due to ${reasonCode}: ${description}`
+        : `Pending due to ${reasonCode}. This indicates a per-user limit was exceeded.`;
+
+    return { reasonCode, tooltip };
+}
+
 function getStateClass(state) {
     if (!state) return 'unknown';
     const s = state.toLowerCase();
@@ -962,6 +1058,37 @@ function initTooltips() {
     });
 }
 
+function initUserLimitTooltips() {
+    let tooltipEl = document.getElementById('column-tooltip');
+    if (!tooltipEl) {
+        tooltipEl = document.createElement('div');
+        tooltipEl.id = 'column-tooltip';
+        tooltipEl.className = 'column-tooltip';
+        document.body.appendChild(tooltipEl);
+    }
+
+    document.addEventListener('mouseenter', (e) => {
+        const warning = e.target.closest('.user-limit-warning');
+        if (!warning) return;
+
+        const tooltipText = warning.getAttribute('data-tooltip');
+        if (!tooltipText) return;
+
+        tooltipEl.textContent = tooltipText;
+        tooltipEl.classList.add('visible');
+
+        const rect = warning.getBoundingClientRect();
+        tooltipEl.style.left = rect.left + (rect.width / 2) + 'px';
+        tooltipEl.style.top = rect.bottom + 8 + 'px';
+    }, true);
+
+    document.addEventListener('mouseleave', (e) => {
+        const warning = e.target.closest('.user-limit-warning');
+        if (!warning) return;
+        tooltipEl.classList.remove('visible');
+    }, true);
+}
+
 // Tooltip for truncated job names
 function initNameTooltips() {
     let tooltip = document.getElementById('name-tooltip');
@@ -996,6 +1123,6 @@ function initNameTooltips() {
 // Initialize tooltips when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     initTooltips();
+    initUserLimitTooltips();
     initNameTooltips();
 });
-

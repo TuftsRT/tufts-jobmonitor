@@ -220,18 +220,19 @@ module JobParser
     details[:user] = output[/UserId=(\w+)/, 1]
     details[:partition] = output[/Partition=(\S+)/, 1]
     details[:state] = output[/JobState=(\S+)/, 1]
-    details[:start_time] = output[/StartTime=([^\s]+(?:\s+[^\s]+)?)/, 1]
-    details[:end_time] = output[/EndTime=([^\s]+(?:\s+[^\s]+)?)/, 1]
+    details[:start_time] = output[/StartTime=(\S+)/, 1]
+    details[:end_time] = output[/EndTime=(\S+)/, 1]
     details[:time_limit] = output[/TimeLimit=(\S+)/, 1]
-    details[:submit_time] = output[/SubmitTime=([^\s]+(?:\s+[^\s]+)?)/, 1]
+    details[:submit_time] = output[/SubmitTime=(\S+)/, 1]
     details[:work_dir] = output[/WorkDir=(\S+)/, 1]
     details[:std_out] = output[/StdOut=(\S+)/, 1]
     details[:std_err] = output[/StdErr=(\S+)/, 1]
     details[:nodes] = output[/NumNodes=(\S+)/, 1]
     details[:cpus] = output[/NumCPUs=(\S+)/, 1]
-    details[:node_list] = output[/NodeList=(\S+)/, 1]
+    details[:node_list] = output[/(?<!\w)NodeList=(\S+)/, 1]
     details[:reason] = output[/Reason=([^\n]+)/, 1]&.strip
-    
+    details[:req_mem] = output[/MinMemoryNode=(\S+)/, 1]
+
     # Parse TRES (including GPUs)
     tres = output[/TRES=(\S+)/, 1]
     if tres
