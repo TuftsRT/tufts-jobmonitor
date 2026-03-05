@@ -231,7 +231,8 @@ module JobParser
     details[:cpus] = output[/NumCPUs=(\S+)/, 1]
     details[:node_list] = output[/(?<!\w)NodeList=(\S+)/, 1]
     details[:reason] = output[/Reason=([^\n]+)/, 1]&.strip
-    
+    details[:req_mem] = output[/MinMemoryNode=(\S+)/, 1]
+
     # Parse TRES (including GPUs)
     tres = output[/TRES=(\S+)/, 1]
     if tres
