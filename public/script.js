@@ -344,7 +344,7 @@ function renderCurrentJobs(jobs) {
             state: job.state,
             reason: job.reason,
             warning_match: !!warning,
-            warning_reason_code: warning ? warning.reasonCode : null
+            warning_reason_codes: warning ? warning.reasonCodes : null
         });
         const stateLabel = job.state_name;
         return `
@@ -986,25 +986,25 @@ function getUserLimitWarning(job) {
     const reason = (job.reason || '').trim();
     if (!reason) return null;
 
-    const reasonCode = reason.split(',')[0].trim();
-    // Slurm reason codes are often like QOSMaxCpuPerUserLimit, QOSMaxGRESPerUser, etc.
-    // Match "Max...PerUser" patterns instead of only exact "MaxPerUser".
-    const matchesUserLimit = /Max.*PerUser/i.test(reasonCode);
-    if (!matchesUserLimit) {
+    // Split comma-separated reason codes and keep those matching Max.*PerUser
+    const reasonCodes = reason.split(',').map(r => r.trim()).filter(r => /Max.*PerUser/i.test(r));
+    if (reasonCodes.length === 0) {
         debugLog('Pending job reason does not match MaxPerUser', {
             job_id: job.job_id,
-            reason,
-            reason_code: reasonCode
+            reason
         });
         return null;
     }
 
-    const description = USER_LIMIT_REASON_DETAILS[reasonCode];
-    const tooltip = description
-        ? `Pending due to ${reasonCode}: ${description}`
-        : `Pending due to ${reasonCode}. This indicates a per-user limit was exceeded.`;
+    const lines = reasonCodes.map(code => {
+        const description = USER_LIMIT_REASON_DETAILS[code];
+        return description
+            ? `• ${code}: ${description}`
+            : `• ${code}: Per-user limit exceeded.`;
+    });
+    const tooltip = 'Pending due to:\n' + lines.join('\n');
 
-    return { reasonCode, tooltip };
+    return { reasonCodes, tooltip };
 }
 
 function getStateClass(state) {

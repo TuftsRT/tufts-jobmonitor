@@ -1093,8 +1093,9 @@ tbody td {
     font-size: 0.9rem;
     font-weight: 400;
     max-width: 320px;
-    text-align: center;
+    text-align: left;
     line-height: 1.5;
+    white-space: pre-line;
     z-index: 99999;
     pointer-events: none;
     opacity: 0;
