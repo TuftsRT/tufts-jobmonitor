@@ -363,7 +363,7 @@ function renderCurrentJobs(jobs) {
             <td class="d-no-small d-no-medium" >${job.nodes}</td>
             <td class="d-no-small d-no-medium" >${job.cpus}</td>
             <td class="d-no-small d-no-medium" >${job.gpus}</td>
-            <td class="d-no-small" >${escapeHtml(job.node_list)}</td>
+            <td class="d-no-small" >${nodeToSshLink(job.node_list, job.batch_host)}</td>
             <td>
                 <button class="btn btn-info d-no-small" onclick="showJobDetails('${escapeHtml(job.job_id)}')">
                     <i class="fas fa-info-circle"></i> Details
@@ -624,7 +624,7 @@ function renderBasicInfoData(details) {
             </div>
             <div class="detail-item">
                 <div class="detail-label">Node List</div>
-                <div class="detail-value">${escapeHtml(details.node_list || 'N/A')}</div>
+                <div class="detail-value">${nodeToSshLink(details.node_list, details.batch_host)}</div>
             </div>
             <div class="detail-item">
                 <div class="detail-label">State</div>
@@ -1005,6 +1005,30 @@ function getUserLimitWarning(job) {
         : `Pending due to ${reasonCode}. This indicates a per-user limit was exceeded.`;
 
     return { reasonCode, tooltip };
+}
+
+// Generate an SSH link for a node name
+// For multi-node jobs, uses the batch host; for single-node, uses the node_list directly
+function nodeToSshLink(nodeList, batchHost) {
+    if (!nodeList || isMissingValue(nodeList)) return escapeHtml(nodeList || 'N/A');
+
+    // Determine which hostname to link to
+    let hostname;
+    const isMultiNode = nodeList.includes('[') || nodeList.includes(',');
+
+    if (isMultiNode && batchHost && !isMissingValue(batchHost)) {
+        // Multi-node job: link to batch host
+        hostname = batchHost;
+    } else if (!isMultiNode) {
+        // Single-node job: link directly to the node
+        hostname = nodeList;
+    } else {
+        // Multi-node with no batch host available: show plain text
+        return escapeHtml(nodeList);
+    }
+
+    const shellUrl = `${window.OOD_SHELL_URL}/${encodeURIComponent(hostname)}`;
+    return `<a href="${shellUrl}" class="node-ssh-link" title="Open shell on ${escapeHtml(hostname)}" target="_blank" onclick="event.stopPropagation()"><i class="fas fa-terminal"></i> ${escapeHtml(hostname)}</a>`;
 }
 
 function getStateClass(state) {

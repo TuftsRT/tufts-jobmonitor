@@ -22,7 +22,7 @@ module JobParser
 
   # Get current user's running and pending jobs using squeue
   def self.get_current_jobs
-    output = run_command('squeue --me -o "%i|%j|%P|%t|%M|%l|%D|%C|%b|%N|%r" --noheader')
+    output = run_command('squeue --me -o "%i|%j|%P|%t|%M|%l|%D|%C|%b|%N|%r|%B" --noheader')
     jobs = []
     
     output.each_line do |line|
@@ -58,7 +58,8 @@ module JobParser
         cpus: parts[7].to_i,
         gpus: gpus,
         node_list: parts[9] || 'N/A',
-        reason: parts[10] || ''
+        reason: parts[10] || '',
+        batch_host: parts[11] || ''
       }
       
       jobs << job
@@ -230,6 +231,7 @@ module JobParser
     details[:nodes] = output[/NumNodes=(\S+)/, 1]
     details[:cpus] = output[/NumCPUs=(\S+)/, 1]
     details[:node_list] = output[/(?<!\w)NodeList=(\S+)/, 1]
+    details[:batch_host] = output[/BatchHost=(\S+)/, 1]
     details[:reason] = output[/Reason=([^\n]+)/, 1]&.strip
     details[:req_mem] = output[/MinMemoryNode=(\S+)/, 1]
 
