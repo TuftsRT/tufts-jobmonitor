@@ -165,6 +165,9 @@ module JobParser
         state = 'OUT_OF_MEMORY'
       end
 
+      # Skip running/pending jobs — they belong in the current jobs section only
+      next if ['RUNNING', 'PENDING'].include?(state)
+
       req_mem = parts[8]
       
       # Parse GPUs from ReqTRES field (index 13)
