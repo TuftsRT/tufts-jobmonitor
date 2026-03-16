@@ -619,6 +619,10 @@ function renderBasicInfoData(details) {
                 <div class="detail-value">${escapeHtml(details.partition || 'N/A')}</div>
             </div>
             <div class="detail-item">
+                <div class="detail-label">QOS</div>
+                <div class="detail-value">${escapeHtml(details.qos || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
                 <div class="detail-label">Nodes</div>
                 <div class="detail-value">${escapeHtml(details.nodes || 'N/A')}</div>
             </div>
@@ -720,6 +724,10 @@ function renderResourcesIOData(data) {
             <div class="detail-item">
                 <div class="detail-label">GPUs</div>
                 <div class="detail-value">${details.gpus || 0}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">GPU Model</div>
+                <div class="detail-value">${escapeHtml(details.gpu_model || 'N/A')}</div>
             </div>
             <div class="detail-item">
                 <div class="detail-label">Requested Memory</div>
