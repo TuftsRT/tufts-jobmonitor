@@ -1,5 +1,6 @@
 require 'open3'
 require 'json'
+require 'set'
 require 'time'
 
 module JobParser
@@ -26,8 +27,10 @@ module JobParser
     jobs = []
     
     output.each_line do |line|
-      parts = line.strip.split('|')
-      next if parts.length < 10
+      # Job names can contain the visible delimiter, so rebuild the name
+      # from the middle fields and keep the fixed-position columns from the right.
+      parts = parse_slurm_line(line, trailing_fields_count: 11)
+      next unless parts
       
       # Parse GPU allocation from TRES format (e.g., gres/gpu:a100:1)
       gpu_tres = parts[8] || ''
@@ -110,9 +113,8 @@ module JobParser
 
     # First pass: collect memory from job steps and check for OOM
     output.each_line do |line|
-      # Use -1 limit to keep trailing empty fields
-      parts = line.strip.split('|', -1)
-      next if parts.length < 13
+      parts = parse_slurm_line(line, trailing_fields_count: 12)
+      next unless parts
 
       job_id = parts[0]
       state = parts[3] || ''
@@ -145,9 +147,8 @@ module JobParser
     # Second pass: build job list (only main jobs)
     seen_jobs = Set.new
     output.each_line do |line|
-      # Use -1 limit to keep trailing empty fields
-      parts = line.strip.split('|', -1)
-      next if parts.length < 13
+      parts = parse_slurm_line(line, trailing_fields_count: 12)
+      next unless parts
       
       job_id = parts[0]
       
@@ -290,10 +291,15 @@ module JobParser
     main_job_line = lines.find { |line| !line.include?('.') && line.start_with?(jobid) }
 
     # Check if any job step has OUT_OF_MEMORY state
-    has_oom = lines.any? { |line| line.split('|')[5]&.upcase&.include?('OUT_OF_MEMORY') }
+    has_oom = lines.any? do |line|
+      fields = parse_slurm_line(line, trailing_fields_count: 17)
+      fields && fields[5]&.upcase&.include?('OUT_OF_MEMORY')
+    end
 
     if main_job_line
-      fields = main_job_line.split('|')
+      fields = parse_slurm_line(main_job_line, trailing_fields_count: 17)
+      return details unless fields
+
       details[:job_name] = fields[1]
       details[:user] = fields[2]
       details[:account] = fields[3]
@@ -470,6 +476,17 @@ module JobParser
   end
 
   private
+
+  def self.parse_slurm_line(line, trailing_fields_count:)
+    parts = line.to_s.chomp.split('|', -1)
+    return nil if parts.length < trailing_fields_count + 2
+
+    leading_field = parts[0]
+    middle_fields = parts[1...(parts.length - trailing_fields_count)]
+    trailing_fields = parts.last(trailing_fields_count)
+
+    [leading_field, middle_fields.join('|'), *trailing_fields]
+  end
 
   # Parse GPU TRES format
   def self.parse_gpu_tres(gpu_tres)
