@@ -23,7 +23,7 @@ module JobParser
 
   # Get current user's running and pending jobs using squeue
   def self.get_current_jobs
-    output = run_command('squeue --me -o "%i|%j|%P|%t|%M|%l|%D|%C|%b|%N|%r" --noheader')
+    output = run_command('squeue --me -o "%i|%j|%P|%t|%M|%l|%D|%C|%b|%N|%r|%q|%B" --noheader')
     jobs = []
     
     output.each_line do |line|
@@ -32,9 +32,10 @@ module JobParser
       parts = parse_slurm_line(line, trailing_fields_count: 9)
       next unless parts
       
-      # Parse GPU allocation from TRES format
+      # Parse GPU allocation from TRES format (e.g., gres/gpu:a100:1)
       gpu_tres = parts[8] || ''
       gpus = parse_gpu_tres(gpu_tres)
+      gpu_model = parse_gpu_model(gpu_tres)
       
       state_code = parts[3]
       state_name = case state_code
@@ -60,8 +61,11 @@ module JobParser
         nodes: parts[6].to_i,
         cpus: parts[7].to_i,
         gpus: gpus,
+        gpu_model: gpu_model,
         node_list: parts[9] || 'N/A',
-        reason: parts[10] || ''
+        reason: parts[10] || '',
+        qos: parts[11] || 'N/A',
+        batch_host: parts[12] || ''
       }
       
       jobs << job
@@ -99,7 +103,7 @@ module JobParser
     # Use sacct to get historical jobs (including ReqTRES for GPU info)
     output = run_command(
       "sacct --user=$USER --starttime #{start_str} --endtime #{end_str} " +
-      "--format=JobID,JobName,Partition,State,Elapsed,Start,End,MaxRSS,ReqMem,NNodes,NCPUS,NodeList,ExitCode,ReqTRES " +
+      "--format=JobID,JobName,Partition,State,Elapsed,Start,End,MaxRSS,ReqMem,NNodes,NCPUS,NodeList,ExitCode,ReqTRES,QOS " +
       "--noheader --parsable2"
     )
     
@@ -166,17 +170,22 @@ module JobParser
         state = 'OUT_OF_MEMORY'
       end
 
+      # Skip running/pending jobs — they belong in the current jobs section only
+      next if ['RUNNING', 'PENDING'].include?(state)
+
       req_mem = parts[8]
       
       # Parse GPUs from ReqTRES field (index 13)
       req_tres = parts[13] || ''
       gpus = 0
-      if req_tres =~ /gres\/gpu=(\d+)/
-        gpus = $1.to_i
-      elsif req_tres =~ /gres\/gpu:[\w]+:(\d+)/
+      gpu_model = nil
+      if req_tres =~ /gres\/gpu:(\w+):(\d+)/
+        gpu_model = $1.upcase
+        gpus = $2.to_i
+      elsif req_tres =~ /gres\/gpu=(\d+)/
         gpus = $1.to_i
       end
-      
+
       job = {
         job_id: job_id,
         name: parts[1],
@@ -192,7 +201,9 @@ module JobParser
         cpus: parts[10].to_i,
         node_list: parts[11] || 'N/A',
         exit_code: parts[12],
-        gpus: gpus
+        gpus: gpus,
+        gpu_model: gpu_model,
+        qos: parts[14] || 'N/A'
       }
       
       jobs << job
@@ -231,8 +242,12 @@ module JobParser
     details[:nodes] = output[/NumNodes=(\S+)/, 1]
     details[:cpus] = output[/NumCPUs=(\S+)/, 1]
     details[:node_list] = output[/(?<!\w)NodeList=(\S+)/, 1]
+    details[:batch_host] = output[/BatchHost=(\S+)/, 1]
     details[:reason] = output[/Reason=([^\n]+)/, 1]&.strip
     details[:req_mem] = output[/MinMemoryNode=(\S+)/, 1]
+
+    # Parse QOS
+    details[:qos] = output[/QOS=(\S+)/, 1]
 
     # Parse TRES (including GPUs)
     tres = output[/TRES=(\S+)/, 1]
@@ -241,6 +256,13 @@ module JobParser
       if tres =~ /gres\/gpu=(\d+)/
         details[:gpus] = $1.to_i
       end
+    end
+
+    # Parse GPU model from TresPerNode (e.g., gres/gpu:a100:1)
+    tres_per_node = output[/TresPerNode=(\S+)/, 1]
+    if tres_per_node && tres_per_node =~ /gres\/gpu:(\w+):(\d+)/
+      details[:gpu_model] = $1.upcase
+      details[:gpus] ||= $2.to_i
     end
     
     details
@@ -252,7 +274,7 @@ module JobParser
     output = run_command(
       "sacct -j #{jobid} --format=JobID,JobName,User,Account,Partition,State," +
       "Submit,Start,End,Elapsed,TimeLimit,NCPUS,NNodes,NodeList,ReqMem,MaxRSS," +
-      "ExitCode,WorkDir,ReqTRES --parsable2 --noheader"
+      "ExitCode,WorkDir,ReqTRES,QOS --parsable2 --noheader"
     )
     
     # Also get the full format output for raw display
@@ -296,13 +318,31 @@ module JobParser
       details[:exit_code] = fields[16]
       details[:work_dir] = fields[17] if fields[17] && !fields[17].empty?
       
-      # Parse GPUs from ReqTRES if available
+      # Parse GPUs and GPU model from ReqTRES if available
       req_tres = fields[18]
-      if req_tres && req_tres =~ /gres\/gpu=(\d+)/
-        details[:gpus] = $1.to_i
+      if req_tres
+        if req_tres =~ /gres\/gpu:(\w+):(\d+)/
+          details[:gpu_model] = $1.upcase
+          details[:gpus] = $2.to_i
+        elsif req_tres =~ /gres\/gpu=(\d+)/
+          details[:gpus] = $1.to_i
+        end
       end
+
+      # If GPU was requested but model unknown, look it up from the node
+      if details[:gpus] && details[:gpus] > 0 && !details[:gpu_model]
+        node_name = details[:node_list]
+        if node_name && node_name != 'N/A' && !node_name.empty?
+          # Use first node if multiple (e.g., "node[001-002]" or "node001,node002")
+          first_node = node_name.split(/[\[,]/)[0]
+          details[:gpu_model] = get_node_gpu_model(first_node)
+        end
+      end
+
+      # Parse QOS (index 19)
+      details[:qos] = fields[19] if fields[19] && !fields[19].empty?
     end
-    
+
     details
   end
 
@@ -451,7 +491,7 @@ module JobParser
   # Parse GPU TRES format
   def self.parse_gpu_tres(gpu_tres)
     return 0 if gpu_tres.nil? || gpu_tres.empty? || gpu_tres == 'N/A'
-    
+
     if gpu_tres =~ /gpu:(\w+):(\d+)/
       # Format: gres/gpu:TYPE:COUNT
       return $2.to_i
@@ -459,8 +499,31 @@ module JobParser
       # Format: gres/gpu:COUNT
       return $1.to_i
     end
-    
+
     0
+  end
+
+  # Look up GPU model from a node's Gres field (e.g., "gpu:a100:4(S:0-1)")
+  def self.get_node_gpu_model(node_name)
+    return nil if node_name.nil? || node_name.empty?
+
+    output = run_command("scontrol show node #{node_name} 2>/dev/null")
+    if output =~ /Gres=gpu:(\w+):/
+      return $1.upcase
+    end
+
+    nil
+  end
+
+  # Parse GPU model from TRES format (e.g., gres/gpu:a100:1 -> "A100")
+  def self.parse_gpu_model(gpu_tres)
+    return nil if gpu_tres.nil? || gpu_tres.empty? || gpu_tres == 'N/A'
+
+    if gpu_tres =~ /gpu:([a-zA-Z]\w*):(\d+)/
+      return $1.upcase
+    end
+
+    nil
   end
 
   # Parse memory string to human-readable format

@@ -152,6 +152,24 @@ body {
     background: #2980b9;
 }
 
+.node-ssh-link {
+    color: #3498db;
+    text-decoration: none;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.node-ssh-link:hover {
+    color: #2980b9;
+    text-decoration: underline;
+}
+
+.node-ssh-link i {
+    font-size: 0.75em;
+}
+
 .btn-danger {
     background: #e74c3c;
     color: white;
@@ -1093,8 +1111,9 @@ tbody td {
     font-size: 0.9rem;
     font-weight: 400;
     max-width: 320px;
-    text-align: center;
+    text-align: left;
     line-height: 1.5;
+    white-space: pre-line;
     z-index: 99999;
     pointer-events: none;
     opacity: 0;

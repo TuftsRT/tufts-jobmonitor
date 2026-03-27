@@ -344,7 +344,7 @@ function renderCurrentJobs(jobs) {
             state: job.state,
             reason: job.reason,
             warning_match: !!warning,
-            warning_reason_code: warning ? warning.reasonCode : null
+            warning_reason_codes: warning ? warning.reasonCodes : null
         });
         const stateLabel = job.state_name;
         return `
@@ -363,7 +363,7 @@ function renderCurrentJobs(jobs) {
             <td class="d-no-small d-no-medium" >${job.nodes}</td>
             <td class="d-no-small d-no-medium" >${job.cpus}</td>
             <td class="d-no-small d-no-medium" >${job.gpus}</td>
-            <td class="d-no-small" >${escapeHtml(job.node_list)}</td>
+            <td class="d-no-small" >${nodeToSshLink(job.state, job.node_list, job.batch_host)}</td>
             <td>
                 <button class="btn btn-info d-no-small" onclick="showJobDetails('${escapeHtml(job.job_id)}')">
                     <i class="fas fa-info-circle"></i> Details
@@ -619,12 +619,16 @@ function renderBasicInfoData(details) {
                 <div class="detail-value">${escapeHtml(details.partition || 'N/A')}</div>
             </div>
             <div class="detail-item">
+                <div class="detail-label">QOS</div>
+                <div class="detail-value">${escapeHtml(details.qos || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
                 <div class="detail-label">Nodes</div>
                 <div class="detail-value">${escapeHtml(details.nodes || 'N/A')}</div>
             </div>
             <div class="detail-item">
                 <div class="detail-label">Node List</div>
-                <div class="detail-value">${escapeHtml(details.node_list || 'N/A')}</div>
+                <div class="detail-value">${nodeToSshLink(details.state, details.node_list, details.batch_host)}</div>
             </div>
             <div class="detail-item">
                 <div class="detail-label">State</div>
@@ -720,6 +724,10 @@ function renderResourcesIOData(data) {
             <div class="detail-item">
                 <div class="detail-label">GPUs</div>
                 <div class="detail-value">${details.gpus || 0}</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">GPU Model</div>
+                <div class="detail-value">${escapeHtml(details.gpu_model || 'N/A')}</div>
             </div>
             <div class="detail-item">
                 <div class="detail-label">Requested Memory</div>
@@ -986,25 +994,54 @@ function getUserLimitWarning(job) {
     const reason = (job.reason || '').trim();
     if (!reason) return null;
 
-    const reasonCode = reason.split(',')[0].trim();
-    // Slurm reason codes are often like QOSMaxCpuPerUserLimit, QOSMaxGRESPerUser, etc.
-    // Match "Max...PerUser" patterns instead of only exact "MaxPerUser".
-    const matchesUserLimit = /Max.*PerUser/i.test(reasonCode);
-    if (!matchesUserLimit) {
+    // Split comma-separated reason codes and keep those matching Max.*PerUser
+    const reasonCodes = reason.split(',').map(r => r.trim()).filter(r => /Max.*PerUser/i.test(r));
+    if (reasonCodes.length === 0) {
         debugLog('Pending job reason does not match MaxPerUser', {
             job_id: job.job_id,
-            reason,
-            reason_code: reasonCode
+            reason
         });
         return null;
     }
 
-    const description = USER_LIMIT_REASON_DETAILS[reasonCode];
-    const tooltip = description
-        ? `Pending due to ${reasonCode}: ${description}`
-        : `Pending due to ${reasonCode}. This indicates a per-user limit was exceeded.`;
+    const lines = reasonCodes.map(code => {
+        const description = USER_LIMIT_REASON_DETAILS[code];
+        return description
+            ? `• ${code}: ${description}`
+            : `• ${code}: Per-user limit exceeded.`;
+    });
+    const tooltip = 'Pending due to:\n' + lines.join('\n');
 
-    return { reasonCode, tooltip };
+    return { reasonCodes, tooltip };
+}
+
+// Generate an SSH link for a node name
+// For multi-node jobs, uses the batch host; for single-node, uses the node_list directly
+function nodeToSshLink(jobState , nodeList, batchHost) {
+    if ( !(jobState == 'R' || jobState == 'RUNNING') ) return escapeHtml(nodeList || 'N/A');
+
+    if (!nodeList || isMissingValue(nodeList) ) return escapeHtml(nodeList || 'N/A');
+
+    // Determine which hostname to link to
+    let hostname;
+    let extraNodeList;
+    const isMultiNode = nodeList.includes('[') || nodeList.includes(',');
+
+    if (isMultiNode && batchHost && !isMissingValue(batchHost)) {
+        // Multi-node job: link to batch host
+        hostname = batchHost;
+        extraNodeList = `, ${escapeHtml(nodeList)}`;
+    } else if (!isMultiNode) {
+        // Single-node job: link directly to the node
+        hostname = nodeList;
+        extraNodeList = '';
+    } else {
+        // Multi-node with no batch host available: show plain text
+        return escapeHtml(nodeList);
+    }
+
+    const shellUrl = `${window.OOD_SHELL_URL}/${encodeURIComponent(hostname)}`;
+    return `<a href="${shellUrl}" class="node-ssh-link" title="Open shell on ${escapeHtml(hostname)}" target="_blank" onclick="event.stopPropagation()"><i class="fas fa-terminal"></i> ${escapeHtml(hostname)}</a> ${extraNodeList}`;
 }
 
 function getStateClass(state) {

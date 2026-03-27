@@ -174,7 +174,7 @@ get '/api/debug/sacct' do
   end_str = (end_date + 86400).strftime('%Y-%m-%d')  # Add 1 day to include today
   
   cmd = "sacct --user=$USER --starttime #{start_str} --endtime #{end_str} " +
-        "--format=JobID,JobName,Partition,State,Elapsed,Start,End,MaxRSS,ReqMem,NNodes,NCPUS,NodeList,ExitCode,ReqTRES " +
+        "--format=JobID,JobName,Partition,State,Elapsed,Start,End,MaxRSS,ReqMem,NNodes,NCPUS,NodeList,ExitCode,ReqTRES,QOS " +
         "--noheader --parsable2"
   
   stdout, stderr, status = Open3.capture3(cmd)
