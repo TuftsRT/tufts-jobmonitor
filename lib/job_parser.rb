@@ -29,7 +29,7 @@ module JobParser
     output.each_line do |line|
       # Job names can contain the visible delimiter, so rebuild the name
       # from the middle fields and keep the fixed-position columns from the right.
-      parts = parse_slurm_line(line, trailing_fields_count: 9)
+      parts = parse_slurm_line(line, trailing_fields_count: 11)
       next unless parts
       
       # Parse GPU allocation from TRES format (e.g., gres/gpu:a100:1)
@@ -147,7 +147,7 @@ module JobParser
     # Second pass: build job list (only main jobs)
     seen_jobs = Set.new
     output.each_line do |line|
-      parts = parse_slurm_line(line, trailing_fields_count: 12)
+      parts = parse_slurm_line(line, trailing_fields_count: 13)
       next unless parts
       
       job_id = parts[0]
@@ -292,12 +292,12 @@ module JobParser
 
     # Check if any job step has OUT_OF_MEMORY state
     has_oom = lines.any? do |line|
-      fields = parse_slurm_line(line, trailing_fields_count: 17)
+      fields = parse_slurm_line(line, trailing_fields_count: 18)
       fields && fields[5]&.upcase&.include?('OUT_OF_MEMORY')
     end
 
     if main_job_line
-      fields = parse_slurm_line(main_job_line, trailing_fields_count: 17)
+      fields = parse_slurm_line(main_job_line, trailing_fields_count: 18)
       return details unless fields
 
       details[:job_name] = fields[1]
