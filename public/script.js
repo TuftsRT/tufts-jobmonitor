@@ -8,6 +8,9 @@ let historySortColumn = 'start';
 let historySortDirection = 'desc';
 let currentJobId = null; // Track the currently viewed job in the modal
 let jobDetailsCache = {}; // Cache job details data for faster tab switching
+const CAN_ADMIN_SCOPE = window.CAN_ADMIN_SCOPE === true || window.CAN_ADMIN_SCOPE === 'true';
+let selectedUserIdentifier = '';
+const USER_IDENTIFIER_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 // Check if a value represents a missing/empty field
 function isMissingValue(val) {
@@ -37,6 +40,92 @@ function formatDateTimeLocal(date) {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function normalizeUserIdentifier(value) {
+    return (value || '').trim();
+}
+
+function getSelectedUserIdentifier() {
+    if (!CAN_ADMIN_SCOPE) return '';
+    return normalizeUserIdentifier(selectedUserIdentifier);
+}
+
+function hasScopedUserSelection() {
+    return getSelectedUserIdentifier().length > 0;
+}
+
+function isValidUserIdentifier(value) {
+    return value === '' || USER_IDENTIFIER_PATTERN.test(value);
+}
+
+function getApiUrl(path, params = {}) {
+    const url = new URL(`${window.APP_BASE_PATH}${path}`, window.location.origin);
+    const userIdentifier = getSelectedUserIdentifier();
+
+    if (userIdentifier) {
+        url.searchParams.set('user', userIdentifier);
+    }
+
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== '') {
+            url.searchParams.set(key, value);
+        }
+    });
+
+    return `${url.pathname}${url.search}`;
+}
+
+function updateUserScopeStatus() {
+    const status = document.getElementById('user-scope-status');
+    if (!CAN_ADMIN_SCOPE || !status) return;
+
+    if (hasScopedUserSelection()) {
+        status.textContent = `Admin/debug view: showing jobs for ${getSelectedUserIdentifier()}`;
+        status.classList.add('scoped');
+    } else {
+        status.textContent = 'Showing your jobs';
+        status.classList.remove('scoped');
+    }
+}
+
+function syncUserScopeUrl() {
+    const url = new URL(window.location.href);
+    if (!CAN_ADMIN_SCOPE) {
+        url.searchParams.delete('user');
+        window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+        return;
+    }
+
+    const userIdentifier = getSelectedUserIdentifier();
+
+    if (userIdentifier) {
+        url.searchParams.set('user', userIdentifier);
+    } else {
+        url.searchParams.delete('user');
+    }
+
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+}
+
+function applyUserScope() {
+    if (!CAN_ADMIN_SCOPE) return;
+
+    const input = document.getElementById('user-scope-input');
+    const nextValue = normalizeUserIdentifier(input.value);
+
+    if (!isValidUserIdentifier(nextValue)) {
+        showToast('Use only letters, numbers, dots, underscores, or hyphens for the user identifier.', 'warning', 'Invalid User');
+        input.focus();
+        return;
+    }
+
+    selectedUserIdentifier = nextValue;
+    input.value = nextValue;
+    jobDetailsCache = {};
+    syncUserScopeUrl();
+    updateUserScopeStatus();
+    loadAllData();
 }
 
 // Toast notification with auto-dismiss
@@ -104,7 +193,15 @@ function applyCustomDateRange() {
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     debugLog('App initializing...', { debug_mode: DEBUG });
+    selectedUserIdentifier = CAN_ADMIN_SCOPE
+        ? normalizeUserIdentifier(new URLSearchParams(window.location.search).get('user'))
+        : '';
     initializeEventListeners();
+    const userScopeInput = document.getElementById('user-scope-input');
+    if (userScopeInput) {
+        userScopeInput.value = selectedUserIdentifier;
+    }
+    updateUserScopeStatus();
     loadAllData();
     setupAutoRefresh();
 });
@@ -113,6 +210,26 @@ document.addEventListener('DOMContentLoaded', () => {
 function initializeEventListeners() {
     // Setup job details modal tabs (only once)
     setupJobDetailsTabs();
+
+    const userScopeForm = document.getElementById('user-scope-form');
+    const userScopeClear = document.getElementById('user-scope-clear');
+    const userScopeInput = document.getElementById('user-scope-input');
+
+    if (CAN_ADMIN_SCOPE && userScopeForm && userScopeClear && userScopeInput) {
+        userScopeForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            applyUserScope();
+        });
+
+        userScopeClear.addEventListener('click', () => {
+            userScopeInput.value = '';
+            applyUserScope();
+        });
+
+        userScopeInput.addEventListener('input', () => {
+            userScopeInput.classList.toggle('input-invalid', !isValidUserIdentifier(normalizeUserIdentifier(userScopeInput.value)));
+        });
+    }
     
     // Refresh button
     document.getElementById('refresh-btn').addEventListener('click', () => {
@@ -211,7 +328,7 @@ async function loadAllData() {
 async function loadSummary() {
     try {
         debugLog('Fetching job summary...');
-        const response = await fetch(`${window.APP_BASE_PATH}/api/summary`);
+        const response = await fetch(getApiUrl('/api/summary'));
         const result = await response.json();
         
         debugLog('Job summary response:', result);
@@ -229,7 +346,7 @@ async function loadSummary() {
 async function loadCurrentJobs() {
     try {
         debugLog('Fetching current jobs...');
-        const response = await fetch(`${window.APP_BASE_PATH}/api/current-jobs`);
+        const response = await fetch(getApiUrl('/api/current-jobs'));
         const result = await response.json();
         
         debugLog('Current jobs response:', result);
@@ -261,10 +378,10 @@ async function loadJobHistory() {
             const startDate = document.getElementById('history-start-date').value;
             const endDate = document.getElementById('history-end-date').value;
             debugLog(`Fetching job history (custom range: ${startDate} to ${endDate})...`);
-            url = `${window.APP_BASE_PATH}/api/job-history?start=${encodeURIComponent(startDate)}&end=${encodeURIComponent(endDate)}`;
+            url = getApiUrl('/api/job-history', { start: startDate, end: endDate });
         } else {
             debugLog(`Fetching job history (last ${daysSelect} days)...`);
-            url = `${window.APP_BASE_PATH}/api/job-history?days=${daysSelect}`;
+            url = getApiUrl('/api/job-history', { days: daysSelect });
         }
 
         const response = await fetch(url);
@@ -368,9 +485,11 @@ function renderCurrentJobs(jobs) {
                 <button class="btn btn-info d-no-small" onclick="showJobDetails('${escapeHtml(job.job_id)}')">
                     <i class="fas fa-info-circle"></i> Details
                 </button>
-                <button class="btn btn-danger" onclick="deleteJob('${escapeHtml(job.job_id)}')">
+                ${hasScopedUserSelection() ? '' : `
+                <button class="btn btn-danger" onclick="deleteJob(event, '${escapeHtml(job.job_id)}')">
                     <i class="fas fa-trash"></i> Cancel
                 </button>
+                `}
             </td>
         </tr>
     `;
@@ -582,7 +701,7 @@ async function loadBasicInfo(jobid) {
     try {
         debugLog(`Fetching basic info for job: ${jobid}`);
         
-        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`);
+        const response = await fetch(getApiUrl(`/api/job/${jobid}`));
         const result = await response.json();
         
         debugLog('Basic info response:', result);
@@ -677,9 +796,9 @@ async function loadResourcesIO(jobid) {
         
         // Fetch both efficiency (seff) and jobinfo data in parallel
         const [effResponse, infoResponse, detailsResponse] = await Promise.all([
-            fetch(`${window.APP_BASE_PATH}/api/job/${jobid}/efficiency`),
-            fetch(`${window.APP_BASE_PATH}/api/job/${jobid}/info`),
-            fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`)
+            fetch(getApiUrl(`/api/job/${jobid}/efficiency`)),
+            fetch(getApiUrl(`/api/job/${jobid}/info`)),
+            fetch(getApiUrl(`/api/job/${jobid}`))
         ]);
         
         const [effResult, infoResult, detailsResult] = await Promise.all([
@@ -770,7 +889,7 @@ async function loadJobScript(jobid) {
     try {
         debugLog(`Fetching job script for job: ${jobid}`);
         
-        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}/script`);
+        const response = await fetch(getApiUrl(`/api/job/${jobid}/script`));
         const result = await response.json();
         
         debugLog('Job script response:', result);
@@ -828,8 +947,13 @@ function copyJobScript() {
 window.copyJobScript = copyJobScript;
 
 // Delete job function with confirmation
-async function deleteJob(jobid) {
+async function deleteJob(event, jobid) {
     event.stopPropagation();
+
+    if (hasScopedUserSelection()) {
+        showToast('Cancelling jobs is only enabled in your default self view.', 'warning', 'Admin View');
+        return;
+    }
 
     // Show confirmation dialog
     const confirmed = confirm(`Are you sure you want to cancel job ${jobid}?\n\nThis action cannot be undone.`);

@@ -107,6 +107,56 @@ body {
     flex-wrap: wrap;
 }
 
+.user-scope-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.user-scope-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.user-scope-input {
+    min-width: 220px;
+    max-width: 260px;
+}
+
+.user-scope-apply,
+.user-scope-clear {
+    padding: 10px 14px;
+}
+
+.user-scope-clear {
+    background: var(--light);
+    color: var(--text-primary);
+}
+
+.user-scope-clear:hover {
+    background: #dfe6e9;
+}
+
+.user-scope-status {
+    margin: -12px 0 18px;
+    padding: 10px 14px;
+    border-left: 4px solid var(--primary);
+    background: rgba(52, 152, 219, 0.08);
+    color: var(--text-secondary);
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.user-scope-status.scoped {
+    border-left-color: var(--warning);
+    background: rgba(243, 156, 18, 0.12);
+    color: var(--dark);
+}
+
 .last-update {
     color: var(--text-secondary);
     font-size: 14px;
@@ -390,6 +440,10 @@ input:checked + .slider:before {
     border-color: var(--primary);
 }
 
+.input-invalid {
+    border-color: var(--danger) !important;
+}
+
 .filter-select {
     background: white;
     cursor: pointer;
@@ -572,6 +626,16 @@ tbody td {
     .header-controls {
         width: 100%;
         justify-content: space-between;
+    }
+
+    .user-scope-form {
+        width: 100%;
+    }
+
+    .user-scope-input {
+        min-width: 0;
+        max-width: none;
+        width: 100%;
     }
     
     .stats-grid {
