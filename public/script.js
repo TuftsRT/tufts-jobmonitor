@@ -11,6 +11,8 @@ let jobDetailsCache = {}; // Cache job details data for faster tab switching
 const CAN_ADMIN_SCOPE = window.CAN_ADMIN_SCOPE === true || window.CAN_ADMIN_SCOPE === 'true';
 let selectedUserIdentifier = '';
 const USER_IDENTIFIER_PATTERN = /^[A-Za-z0-9._-]+$/;
+const DEFAULT_ADMIN_CANCEL_MESSAGE = 'Your job was terminated by Tufts HPC system administrators due to inappropriate use of HPC resources. If you have any questions, please email tts-research@tufts.edu.';
+let pendingAdminCancel = null;
 
 // Check if a value represents a missing/empty field
 function isMissingValue(val) {
@@ -485,11 +487,9 @@ function renderCurrentJobs(jobs) {
                 <button class="btn btn-info d-no-small" onclick="showJobDetails('${escapeHtml(job.job_id)}')">
                     <i class="fas fa-info-circle"></i> Details
                 </button>
-                ${hasScopedUserSelection() ? '' : `
                 <button class="btn btn-danger" onclick="deleteJob(event, '${escapeHtml(job.job_id)}')">
                     <i class="fas fa-trash"></i> Cancel
                 </button>
-                `}
             </td>
         </tr>
     `;
@@ -656,6 +656,39 @@ async function showJobDetails(jobid) {
 // Close job details modal
 function closeJobDetailsModal() {
     document.getElementById('job-details-modal').classList.add('hidden');
+}
+
+function openAdminCancelModal(jobid) {
+    const modal = document.getElementById('admin-cancel-modal');
+    const messageInput = document.getElementById('admin-cancel-message');
+    const context = document.getElementById('admin-cancel-context');
+
+    pendingAdminCancel = {
+        jobid,
+        userIdentifier: getSelectedUserIdentifier()
+    };
+
+    context.textContent = `Cancel job ${jobid} for ${pendingAdminCancel.userIdentifier}. Update the message below if needed. It will be stored on the job before cancellation.`;
+    messageInput.value = DEFAULT_ADMIN_CANCEL_MESSAGE;
+    modal.classList.remove('hidden');
+    messageInput.focus();
+    messageInput.setSelectionRange(messageInput.value.length, messageInput.value.length);
+}
+
+function closeAdminCancelModal() {
+    document.getElementById('admin-cancel-modal').classList.add('hidden');
+    pendingAdminCancel = null;
+}
+
+async function confirmAdminCancel() {
+    if (!pendingAdminCancel) return;
+
+    const messageInput = document.getElementById('admin-cancel-message');
+    const cancelMessage = messageInput.value.trim() || DEFAULT_ADMIN_CANCEL_MESSAGE;
+    const { jobid } = pendingAdminCancel;
+
+    closeAdminCancelModal();
+    await submitJobCancellation(jobid, { adminScoped: true, cancelMessage });
 }
 
 // Setup job details modal tabs (called once on initialization)
@@ -950,13 +983,22 @@ window.copyJobScript = copyJobScript;
 async function deleteJob(event, jobid) {
     event.stopPropagation();
 
-    if (hasScopedUserSelection()) {
-        showToast('Cancelling jobs is only enabled in your default self view.', 'warning', 'Admin View');
+    const isAdminScopedCancel = CAN_ADMIN_SCOPE && hasScopedUserSelection();
+
+    if (isAdminScopedCancel) {
+        openAdminCancelModal(jobid);
         return;
     }
 
-    // Show confirmation dialog
-    const confirmed = confirm(`Are you sure you want to cancel job ${jobid}?\n\nThis action cannot be undone.`);
+    await submitJobCancellation(jobid, { adminScoped: false, cancelMessage: '' });
+}
+
+async function submitJobCancellation(jobid, { adminScoped, cancelMessage }) {
+    const confirmed = confirm(
+        adminScoped
+            ? `Are you sure you want to cancel job ${jobid} for ${getSelectedUserIdentifier()}?\n\nThe admin message will be recorded before cancellation.`
+            : `Are you sure you want to cancel job ${jobid}?\n\nThis action cannot be undone.`
+    );
 
     if (!confirmed) {
         return;
@@ -965,9 +1007,13 @@ async function deleteJob(event, jobid) {
     try {
         showLoading(true);
 
-        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`, {
-            method: 'DELETE'
-        });
+        const fetchOptions = { method: 'DELETE' };
+        if (cancelMessage) {
+            fetchOptions.headers = { 'Content-Type': 'application/json' };
+            fetchOptions.body = JSON.stringify({ comment: cancelMessage });
+        }
+
+        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`, fetchOptions);
 
         const result = await response.json();
 
@@ -979,7 +1025,13 @@ async function deleteJob(event, jobid) {
             filterCurrentJobs();
 
             // Show success toast
-            showToast(`Job ${jobid} has been successfully cancelled.`, 'success', 'Job Cancelled');
+            showToast(
+                adminScoped
+                    ? `Job ${jobid} has been cancelled and the admin message was recorded.`
+                    : `Job ${jobid} has been successfully cancelled.`,
+                'success',
+                'Job Cancelled'
+            );
 
             // Wait 3 seconds before refetching to give SLURM time to process the cancellation
             // This prevents the cancelled job from reappearing due to SLURM's processing delay
@@ -1184,6 +1236,8 @@ function getStateClass(state) {
 // Make functions globally accessible
 window.showJobDetails = showJobDetails;
 window.closeJobDetailsModal = closeJobDetailsModal;
+window.closeAdminCancelModal = closeAdminCancelModal;
+window.confirmAdminCancel = confirmAdminCancel;
 
 // Tooltip system for column headers
 function initTooltips() {

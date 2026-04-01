@@ -13,6 +13,7 @@ enable :static
 helpers do
   ADMIN_GROUP_NAMES = ['tts_rsch_hpc_admin', 'TUFTS\\tts_rsch_hpc_admin'].freeze
   USER_IDENTIFIER_PATTERN = /\A[a-zA-Z0-9._-]+\z/
+  MAX_ADMIN_CANCEL_MESSAGE_LENGTH = 500
 
   def current_unix_user
     ENV['USER'].to_s.strip.tap do |value|
@@ -41,6 +42,23 @@ helpers do
     halt 400, { success: false, error: 'Invalid user identifier' }.to_json unless raw_value.match?(USER_IDENTIFIER_PATTERN)
 
     raw_value
+  end
+
+  def requested_cancel_message
+    request.body.rewind
+    raw_body = request.body.read.to_s
+    return nil if raw_body.strip.empty?
+
+    payload = JSON.parse(raw_body)
+    message = payload['comment'].to_s.strip
+    return nil if message.empty?
+
+    halt 403, { success: false, error: 'Admin cancel messages are not available for this account' }.to_json unless admin_scoping_enabled?
+    halt 400, { success: false, error: "Cancel message cannot exceed #{MAX_ADMIN_CANCEL_MESSAGE_LENGTH} characters" }.to_json if message.length > MAX_ADMIN_CANCEL_MESSAGE_LENGTH
+
+    message
+  rescue JSON::ParserError
+    halt 400, { success: false, error: 'Invalid request payload' }.to_json
   end
 end
 
@@ -167,7 +185,7 @@ delete '/api/job/:jobid' do
 
   begin
     jobid = params[:jobid]
-    result = JobParser.cancel_job(jobid)
+    result = JobParser.cancel_job(jobid, comment: requested_cancel_message)
 
     if result[:success]
       { success: true, message: result[:message] }.to_json

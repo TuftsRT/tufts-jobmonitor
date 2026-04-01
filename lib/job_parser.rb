@@ -475,14 +475,40 @@ module JobParser
     }
   end
 
-  # Cancel a running or pending job using scancel
-  def self.cancel_job(jobid)
-    stdout, stderr, status = Open3.capture3("scancel #{jobid}")
+  # Cancel a running or pending job using scancel, optionally recording an admin comment first.
+  def self.cancel_job(jobid, comment: nil)
+    if comment && !comment.to_s.strip.empty?
+      update_stdout, update_stderr, update_status = Open3.capture3(
+        'scontrol',
+        'update',
+        "JobId=#{jobid}",
+        "Comment=#{comment}"
+      )
+
+      unless update_status.success?
+        return {
+          job_id: jobid,
+          success: false,
+          message: "Failed to record cancellation message for job #{jobid}",
+          stdout: update_stdout,
+          stderr: update_stderr
+        }
+      end
+    end
+
+    stdout, stderr, status = Open3.capture3('scancel', jobid)
+
+    result_message =
+      if status.success?
+        comment && !comment.to_s.strip.empty? ? "Job #{jobid} cancelled and comment recorded successfully" : "Job #{jobid} cancelled successfully"
+      else
+        "Failed to cancel job #{jobid}"
+      end
 
     {
       job_id: jobid,
       success: status.success?,
-      message: status.success? ? "Job #{jobid} cancelled successfully" : "Failed to cancel job #{jobid}",
+      message: result_message,
       stdout: stdout,
       stderr: stderr
     }

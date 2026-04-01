@@ -1082,6 +1082,41 @@ tbody td {
     flex: 1;
 }
 
+.admin-cancel-content {
+    max-width: 720px;
+}
+
+.admin-cancel-context {
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+
+.admin-cancel-textarea {
+    width: 100%;
+    min-height: 160px;
+    resize: vertical;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font: inherit;
+    color: var(--text-primary);
+    background: white;
+}
+
+.admin-cancel-textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.12);
+}
+
+.admin-cancel-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
 /* Tabs */
 .tabs {
     display: flex;
