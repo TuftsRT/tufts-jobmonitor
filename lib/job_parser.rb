@@ -1,15 +1,24 @@
 require 'open3'
 require 'json'
+require 'etc'
 require 'set'
+require 'shellwords'
 require 'time'
 
 module JobParser
   # Execute a command and return stdout
   def self.run_command(cmd)
-    stdout, stderr, status = Open3.capture3(cmd)
+    stdout, stderr, status =
+      if cmd.is_a?(Array)
+        Open3.capture3(*cmd)
+      else
+        Open3.capture3(cmd)
+      end
+
     unless status.success?
       # Log to STDERR so it appears in server logs
-      STDERR.puts "[JobParser] Command failed (exit #{status.exitstatus}): #{cmd}"
+      formatted_cmd = cmd.is_a?(Array) ? Shellwords.join(cmd) : cmd
+      STDERR.puts "[JobParser] Command failed (exit #{status.exitstatus}): #{formatted_cmd}"
       STDERR.puts "[JobParser] STDERR: #{stderr}" unless stderr.empty?
       # Return stdout anyway - sacct may return partial results
       return stdout
@@ -17,13 +26,18 @@ module JobParser
     stdout
   rescue => e
     STDERR.puts "[JobParser] Exception executing command: #{e.message}"
-    STDERR.puts "[JobParser] Command was: #{cmd}"
+    STDERR.puts "[JobParser] Command was: #{cmd.is_a?(Array) ? Shellwords.join(cmd) : cmd}"
     ""
   end
 
   # Get current user's running and pending jobs using squeue
-  def self.get_current_jobs
-    output = run_command('squeue --me -o "%i|%j|%P|%t|%M|%l|%D|%C|%b|%N|%r|%q|%B" --noheader')
+  def self.get_current_jobs(user_identifier: nil)
+    user_identifier = normalize_user_identifier(user_identifier)
+    cmd = ['squeue']
+    cmd += user_identifier ? ['--user', user_identifier] : ['--me']
+    cmd += ['-o', '%i|%j|%P|%t|%M|%l|%D|%C|%b|%N|%r|%q|%B', '--noheader']
+
+    output = run_command(cmd)
     jobs = []
     
     output.each_line do |line|
@@ -77,8 +91,9 @@ module JobParser
   # Get job history using sacct
   # Can be called with days (relative) or start_time/end_time (absolute)
   # Maximum range is 30 days
-  def self.get_job_history(days: 7, start_time: nil, end_time: nil)
+  def self.get_job_history(days: 7, start_time: nil, end_time: nil, user_identifier: nil)
     max_days = 30
+    user_identifier = normalize_user_identifier(user_identifier) || current_user_identifier
 
     # Use custom date range if provided, otherwise calculate from days
     if start_time && end_time
@@ -101,11 +116,17 @@ module JobParser
     end
     
     # Use sacct to get historical jobs (including ReqTRES for GPU info)
-    output = run_command(
-      "sacct --user=$USER --starttime #{start_str} --endtime #{end_str} " +
-      "--format=JobID,JobName,Partition,State,Elapsed,Start,End,MaxRSS,ReqMem,NNodes,NCPUS,NodeList,ExitCode,ReqTRES,QOS " +
-      "--noheader --parsable2"
-    )
+    cmd = [
+      'sacct',
+      '--user', user_identifier,
+      '--starttime', start_str,
+      '--endtime', end_str,
+      '--format=JobID,JobName,Partition,State,Elapsed,Start,End,MaxRSS,ReqMem,NNodes,NCPUS,NodeList,ExitCode,ReqTRES,QOS',
+      '--noheader',
+      '--parsable2'
+    ]
+
+    output = run_command(cmd)
     
     jobs = []
     job_memory = {}  # Track max memory for each main job
@@ -423,8 +444,8 @@ module JobParser
   end
 
   # Get job summary statistics
-  def self.get_job_summary
-    current_jobs = get_current_jobs
+  def self.get_job_summary(user_identifier: nil)
+    current_jobs = get_current_jobs(user_identifier: user_identifier)
     
     running_jobs = current_jobs.select { |j| j[:state] == 'R' }
     pending_jobs = current_jobs.select { |j| j[:state] == 'PD' }
@@ -443,24 +464,51 @@ module JobParser
 
   # Get the batch script used to submit the job
   def self.get_job_script(jobid)
-    # sacct --batch-script returns the script with a header, tail -n +3 skips the header
-    output = run_command("sacct -j #{jobid} --batch-script 2>/dev/null | tail -n +3")
+    output = run_command(['sacct', '-j', jobid, '--batch-script'])
+    script_lines = output.each_line.to_a.drop(2)
+    script = script_lines.join
 
     {
       job_id: jobid,
-      script: output.strip.empty? ? nil : output,
-      available: !output.strip.empty?
+      script: script.strip.empty? ? nil : script,
+      available: !script.strip.empty?
     }
   end
 
-  # Cancel a running or pending job using scancel
-  def self.cancel_job(jobid)
-    stdout, stderr, status = Open3.capture3("scancel #{jobid}")
+  # Cancel a running or pending job using scancel, optionally recording an admin comment first.
+  def self.cancel_job(jobid, comment: nil)
+    if comment && !comment.to_s.strip.empty?
+      update_stdout, update_stderr, update_status = Open3.capture3(
+        'scontrol',
+        'update',
+        "JobId=#{jobid}",
+        "Comment=#{comment}"
+      )
+
+      unless update_status.success?
+        return {
+          job_id: jobid,
+          success: false,
+          message: "Failed to record cancellation message for job #{jobid}",
+          stdout: update_stdout,
+          stderr: update_stderr
+        }
+      end
+    end
+
+    stdout, stderr, status = Open3.capture3('scancel', jobid)
+
+    result_message =
+      if status.success?
+        comment && !comment.to_s.strip.empty? ? "Job #{jobid} cancelled and comment recorded successfully" : "Job #{jobid} cancelled successfully"
+      else
+        "Failed to cancel job #{jobid}"
+      end
 
     {
       job_id: jobid,
       success: status.success?,
-      message: status.success? ? "Job #{jobid} cancelled successfully" : "Failed to cancel job #{jobid}",
+      message: result_message,
       stdout: stdout,
       stderr: stderr
     }
@@ -476,6 +524,19 @@ module JobParser
   end
 
   private
+
+  def self.normalize_user_identifier(user_identifier)
+    value = user_identifier.to_s.strip
+    value.empty? ? nil : value
+  end
+
+  def self.current_user_identifier
+    ENV['USER'].to_s.strip.tap do |value|
+      return value unless value.empty?
+    end
+
+    Etc.getlogin.to_s.strip
+  end
 
   def self.parse_slurm_line(line, trailing_fields_count:)
     parts = line.to_s.chomp.split('|', -1)
