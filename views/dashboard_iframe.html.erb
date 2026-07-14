@@ -1,0 +1,34 @@
+    <style>
+      .job-monitor-iframe {
+        width: 100%;
+        height: 100px;
+        border: none;
+        margin-top: -1.5REM; /*Override spacing above iframe*/
+      }
+
+      #main_container{
+        max-width:1600px; /*Override iframe parent container max width*/
+      }
+    </style>
+
+<iframe src="/pun/sys/tufts-jobmonitor" class="job-monitor-iframe" id="job-monitor-iframe" >
+</iframe>
+
+<script>
+const iframe = document.getElementById("job-monitor-iframe");
+iframe.addEventListener("load", function() {
+  resizeIframe( document.getElementById('job-monitor-iframe') );
+
+  setTimeout(function() {
+          resizeIframe( document.getElementById('job-monitor-iframe') );
+  }, 1000);
+});
+
+window.addEventListener('resize', (event) => {
+    resizeIframe( document.getElementById('job-monitor-iframe') );
+});
+
+function resizeIframe(obj) {
+    obj.style.height = obj.contentWindow.document.body.scrollHeight + 'px';
+}
+</script>

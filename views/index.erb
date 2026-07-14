@@ -4,7 +4,7 @@
     <!-- Version: <%= Time.now.to_i %> -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Job Monitor Dashboard</title>
+    <title>Active Jobs Dashboard</title>
     <% begin; asset_v = File.mtime(File.expand_path('../public/script.js', __dir__)).to_i; css_v = File.mtime(File.expand_path('../public/styles.css', __dir__)).to_i; rescue; asset_v = css_v = Time.now.to_i; end %>
     <link rel="stylesheet" href="<%= request.script_name %>/styles.css?v=<%= css_v %>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -13,22 +13,35 @@
     <script>
         // Base path for the app when mounted under a sub-URL in OOD
         window.APP_BASE_PATH = "<%= request.script_name %>";
+        window.CAN_ADMIN_SCOPE = <%= admin_scoping_enabled ? 'true' : 'false' %>;
+        // OOD Shell app base URL for SSH links
+        window.OOD_SHELL_URL = "/pun/sys/shell/ssh";
     </script>
-    
-    <!-- Navigation Bar -->
-    <nav class="top-nav">
-        <a href="/pun/sys/dashboard" class="nav-link">
-            <i class="fas fa-home"></i> Dashboard
-        </a>
-        <span class="nav-separator"><i class="fas fa-chevron-right"></i></span>
-        <span class="nav-current"><i class="fas fa-briefcase"></i> Job Monitor</span>
-    </nav>
     
     <div class="container">
         <!-- Header -->
         <header class="header">
-            <h1><i class="fas fa-briefcase"></i> Job Monitor</h1>
+            <h1><i class="fas fa-briefcase"></i> Active Jobs</h1>
             <div class="header-controls">
+                <% if admin_scoping_enabled %>
+                <form id="user-scope-form" class="user-scope-form">
+                    <label for="user-scope-input" class="user-scope-label">Admin view</label>
+                    <input
+                        type="text"
+                        id="user-scope-input"
+                        class="search-input user-scope-input"
+                        placeholder="UTLN"
+                        inputmode="text"
+                        autocomplete="off"
+                        spellcheck="false">
+                    <button type="submit" class="btn btn-primary user-scope-apply">
+                        <i class="fas fa-filter"></i> Apply
+                    </button>
+                    <button type="button" id="user-scope-clear" class="btn user-scope-clear">
+                        Clear
+                    </button>
+                </form>
+                <% end %>
                 <div class="last-update">
                     Last updated: <span id="last-update-time">Never</span>
                 </div>
@@ -39,9 +52,15 @@
                     <input type="checkbox" id="auto-refresh-toggle" checked>
                     <span class="slider"></span>
                 </label>
-                <span class="auto-refresh-label">Auto-refresh (30s)</span>
+                <span class="auto-refresh-label">Auto-refresh (120s)</span>
             </div>
         </header>
+
+        <% if admin_scoping_enabled %>
+        <div id="user-scope-status" class="user-scope-status">
+            Showing your jobs
+        </div>
+        <% end %>
 
         <!-- Loading Overlay -->
         <div id="loading-overlay" class="loading-overlay">
@@ -118,15 +137,15 @@
                         <tr>
                             <th data-sort="job_id">Job ID <i class="fas fa-sort"></i></th>
                             <th data-sort="name">Name <i class="fas fa-sort"></i></th>
-                            <th data-sort="partition" class="tooltip-header" data-tooltip="The SLURM partition/queue where the job runs" title="The SLURM partition/queue where the job runs">Partition <i class="fas fa-sort"></i></th>
+                            <th data-sort="partition" class="d-no-small tooltip-header" data-tooltip="The SLURM partition/queue where the job runs" title="The SLURM partition/queue where the job runs">Partition <i class="fas fa-sort"></i></th>
                             <th data-sort="state">State <i class="fas fa-sort"></i></th>
                             <th data-sort="time_used" class="tooltip-header" data-tooltip="Elapsed time since job started running" title="Elapsed time since job started running">Time Used <i class="fas fa-sort"></i></th>
                             <th data-sort="time_limit" class="tooltip-header" data-tooltip="Maximum runtime allowed for the job" title="Maximum runtime allowed for the job">Time Limit <i class="fas fa-sort"></i></th>
-                            <th data-sort="nodes" class="tooltip-header" data-tooltip="Number of compute nodes allocated" title="Number of compute nodes allocated">Nodes <i class="fas fa-sort"></i></th>
-                            <th data-sort="cpus" class="tooltip-header" data-tooltip="Number of CPU cores allocated" title="Number of CPU cores allocated">CPUs <i class="fas fa-sort"></i></th>
-                            <th data-sort="gpus" class="tooltip-header" data-tooltip="Number of GPUs allocated" title="Number of GPUs allocated">GPUs <i class="fas fa-sort"></i></th>
-                            <th class="tooltip-header" data-tooltip="Specific nodes assigned to the job" title="Specific nodes assigned to the job">Node List</th>
-                            <th>Actions</th>
+                            <th data-sort="nodes" class="d-no-small d-no-medium tooltip-header" data-tooltip="Number of compute nodes allocated" title="Number of compute nodes allocated">Nodes <i class="fas fa-sort"></i></th>
+                            <th data-sort="cpus" class="d-no-small d-no-medium tooltip-header" data-tooltip="Number of CPU cores allocated" title="Number of CPU cores allocated">CPUs <i class="fas fa-sort"></i></th>
+                            <th data-sort="gpus" class="d-no-small d-no-medium tooltip-header" data-tooltip="Number of GPUs allocated" title="Number of GPUs allocated">GPUs <i class="fas fa-sort"></i></th>
+                            <th class="d-no-small tooltip-header" data-tooltip="Specific nodes assigned to the job" title="Specific nodes assigned to the job">Node List</th>
+                            <th class="d-no-small d-no-medium" >Actions</th>
                         </tr>
                     </thead>
                     <tbody id="current-jobs-table-body">
@@ -143,17 +162,23 @@
                 <input type="text" id="history-job-search" class="search-input" placeholder="Search job history...">
                 <select id="history-days" class="filter-select">
                     <option value="1">Last 24 Hours</option>
-                    <option value="3">Last 3 Days</option>
                     <option value="7" selected>Last 7 Days</option>
-                    <option value="14">Last 14 Days</option>
                     <option value="30">Last 30 Days</option>
+                    <option value="custom">Custom Range</option>
                 </select>
+                <div id="custom-date-range" class="custom-date-range" style="display: none;">
+                    <input type="datetime-local" id="history-start-date" class="date-input">
+                    <span>to</span>
+                    <input type="datetime-local" id="history-end-date" class="date-input">
+                    <button id="apply-custom-range" class="apply-btn">Apply</button>
+                </div>
                 <select id="history-state-filter" class="filter-select">
                     <option value="all">All States</option>
-                    <option value="COMPLETED">Completed Only</option>
-                    <option value="FAILED">Failed Only</option>
-                    <option value="CANCELLED">Cancelled Only</option>
-                    <option value="TIMEOUT">Timeout Only</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="FAILED">Failed</option>
+                    <option value="CANCELLED">Cancelled</option>
+                    <option value="TIMEOUT">Timeout</option>
+                    <option value="OUT_OF_MEMORY">Out of Memory</option>
                 </select>
             </div>
             <div class="table-wrapper">
@@ -162,16 +187,16 @@
                         <tr>
                             <th data-sort="job_id">Job ID <i class="fas fa-sort"></i></th>
                             <th data-sort="name">Name <i class="fas fa-sort"></i></th>
-                            <th data-sort="partition" class="tooltip-header" data-tooltip="The SLURM partition/queue where the job ran" title="The SLURM partition/queue where the job ran">Partition <i class="fas fa-sort"></i></th>
+                            <th data-sort="partition" class="d-no-small tooltip-header" data-tooltip="The SLURM partition/queue where the job ran" title="The SLURM partition/queue where the job ran">Partition <i class="fas fa-sort"></i></th>
                             <th data-sort="state">State <i class="fas fa-sort"></i></th>
                             <th data-sort="elapsed" class="tooltip-header" data-tooltip="Total time the job ran" title="Total time the job ran">Elapsed <i class="fas fa-sort"></i></th>
                             <th data-sort="start">Start Time <i class="fas fa-sort"></i></th>
-                            <th data-sort="end">End Time <i class="fas fa-sort"></i></th>
-                            <th data-sort="max_rss" class="tooltip-header" data-tooltip="Maximum memory used during job execution (RSS - Resident Set Size)" title="Maximum memory used during job execution (RSS - Resident Set Size)">Max Memory <i class="fas fa-sort"></i></th>
-                            <th data-sort="nodes" class="tooltip-header" data-tooltip="Number of compute nodes used" title="Number of compute nodes used">Nodes <i class="fas fa-sort"></i></th>
-                            <th data-sort="cpus" class="tooltip-header" data-tooltip="Number of CPU cores used" title="Number of CPU cores used">CPUs <i class="fas fa-sort"></i></th>
-                            <th data-sort="gpus" class="tooltip-header" data-tooltip="Number of GPUs used" title="Number of GPUs used">GPUs <i class="fas fa-sort"></i></th>
-                            <th>Actions</th>
+                            <th data-sort="end" class="d-no-small" >End Time <i class="fas fa-sort"></i></th>
+                            <th data-sort="max_rss" class="d-no-small d-no-medium tooltip-header" data-tooltip="Maximum memory used during job execution (RSS - Resident Set Size)" title="Maximum memory used during job execution (RSS - Resident Set Size)">Max Memory <i class="fas fa-sort"></i></th>
+                            <th data-sort="nodes" class="d-no-small d-no-medium tooltip-header" data-tooltip="Number of compute nodes used" title="Number of compute nodes used">Nodes <i class="fas fa-sort"></i></th>
+                            <th data-sort="cpus" class="d-no-small d-no-medium tooltip-header" data-tooltip="Number of CPU cores used" title="Number of CPU cores used">CPUs <i class="fas fa-sort"></i></th>
+                            <th data-sort="gpus" class="d-no-small d-no-medium tooltip-header" data-tooltip="Number of GPUs used" title="Number of GPUs used">GPUs <i class="fas fa-sort"></i></th>
+                            <th class="d-no-small tooltip-header" >Actions</th>
                         </tr>
                     </thead>
                     <tbody id="history-jobs-table-body">
@@ -204,7 +229,30 @@
         </div>
     </div>
 
+    <div id="admin-cancel-modal" class="modal hidden">
+        <div class="modal-content admin-cancel-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-user-shield"></i> Admin Cancel Job</h2>
+                <button class="modal-close" onclick="closeAdminCancelModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="details-section">
+                    <div id="admin-cancel-context" class="admin-cancel-context"></div>
+                </div>
+                <div class="details-section">
+                    <div class="details-section-title">Message To Record</div>
+                    <textarea id="admin-cancel-message" class="admin-cancel-textarea" rows="6"></textarea>
+                </div>
+                <div class="admin-cancel-actions">
+                    <button type="button" class="btn user-scope-clear" onclick="closeAdminCancelModal()">Back</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmAdminCancel()">Record Message And Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="<%= request.script_name %>/script.js?v=<%= asset_v %>"></script>
 </body>
 </html>
-

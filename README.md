@@ -133,6 +133,15 @@ cp -r JobApp /var/www/ood/apps/sys/
 
 2. The app will be available in OOD under the "Jobs > Monitoring" category
 
+#### Customizing navigation
+
+By default a new menu item named "Jobs Monitor" is added in the "Jobs" menu.  To embed this inside the standard dashboard view replacing the built in "Active Jobs" make the following changes. The path /etc/ood/config/apps/**dashboard/views/active_jobs/** to place the override at is derived from the builtin location /var/www/ood/apps/sys/**dashboard/app/views/active_jobs/**\index.html.erb
+1. Remove separate menu item for tufts-jobmonitor
+   - Option A) Set **category:** value in /var/www/ood/apps/sys/tufts-jobmonitor/manifest.yml to a empty 
+   - Option B) Remove manifest file `rm /var/www/ood/apps/sys/tufts-jobmonitor/manifest.yml`
+2. Replace the build in active_jobs view by adding a symbolic link to our new file. 
+   - `ln -s /var/www/ood/apps/sys/tufts-jobmonitor/views/dashboard_iframe.html.erb /etc/ood/config/apps/dashboard/views/active_jobs/index.html.erb`
+
 ## How It Works
 
 ### Intelligent Job Detection

@@ -4,10 +4,25 @@ let historyJobs = [];
 let autoRefreshInterval = null;
 let currentSortColumn = null;
 let currentSortDirection = 'asc';
-let historySortColumn = null;
-let historySortDirection = 'asc';
+let historySortColumn = 'start';
+let historySortDirection = 'desc';
 let currentJobId = null; // Track the currently viewed job in the modal
 let jobDetailsCache = {}; // Cache job details data for faster tab switching
+const CAN_ADMIN_SCOPE = window.CAN_ADMIN_SCOPE === true || window.CAN_ADMIN_SCOPE === 'true';
+let selectedUserIdentifier = '';
+const USER_IDENTIFIER_PATTERN = /^[A-Za-z0-9._-]+$/;
+const DEFAULT_ADMIN_CANCEL_MESSAGE = 'Your job was terminated by Tufts HPC system administrators due to inappropriate use of HPC resources. If you have any questions, please email tts-research@tufts.edu.';
+let pendingAdminCancel = null;
+
+// Check if a value represents a missing/empty field
+function isMissingValue(val) {
+    if (val == null) return true;
+    if (typeof val === 'string') {
+        const lower = val.toLowerCase().trim();
+        return lower === 'none' || lower === 'n/a' || lower === '';
+    }
+    return false;
+}
 
 // Debug mode - enabled with ?debug=1 in URL
 const DEBUG = new URLSearchParams(window.location.search).get('debug') === '1';
@@ -19,10 +34,142 @@ function debugLog(message, data) {
     }
 }
 
+// Format date for datetime-local input
+function formatDateTimeLocal(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function normalizeUserIdentifier(value) {
+    return (value || '').trim();
+}
+
+function getSelectedUserIdentifier() {
+    if (!CAN_ADMIN_SCOPE) return '';
+    return normalizeUserIdentifier(selectedUserIdentifier);
+}
+
+function hasScopedUserSelection() {
+    return getSelectedUserIdentifier().length > 0;
+}
+
+function isValidUserIdentifier(value) {
+    return value === '' || USER_IDENTIFIER_PATTERN.test(value);
+}
+
+function getApiUrl(path, params = {}) {
+    const url = new URL(`${window.APP_BASE_PATH}${path}`, window.location.origin);
+    const userIdentifier = getSelectedUserIdentifier();
+
+    if (userIdentifier) {
+        url.searchParams.set('user', userIdentifier);
+    }
+
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== '') {
+            url.searchParams.set(key, value);
+        }
+    });
+
+    return `${url.pathname}${url.search}`;
+}
+
+function updateUserScopeStatus() {
+    const status = document.getElementById('user-scope-status');
+    if (!CAN_ADMIN_SCOPE || !status) return;
+
+    if (hasScopedUserSelection()) {
+        status.textContent = `Admin/debug view: showing jobs for ${getSelectedUserIdentifier()}`;
+        status.classList.add('scoped');
+    } else {
+        status.textContent = 'Showing your jobs';
+        status.classList.remove('scoped');
+    }
+}
+
+function syncUserScopeUrl() {
+    const url = new URL(window.location.href);
+    if (!CAN_ADMIN_SCOPE) {
+        url.searchParams.delete('user');
+        window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+        return;
+    }
+
+    const userIdentifier = getSelectedUserIdentifier();
+
+    if (userIdentifier) {
+        url.searchParams.set('user', userIdentifier);
+    } else {
+        url.searchParams.delete('user');
+    }
+
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+}
+
+function applyUserScope() {
+    if (!CAN_ADMIN_SCOPE) return;
+
+    const input = document.getElementById('user-scope-input');
+    const nextValue = normalizeUserIdentifier(input.value);
+
+    if (!isValidUserIdentifier(nextValue)) {
+        showToast('Use only letters, numbers, dots, underscores, or hyphens for the user identifier.', 'warning', 'Invalid User');
+        input.focus();
+        return;
+    }
+
+    selectedUserIdentifier = nextValue;
+    input.value = nextValue;
+    jobDetailsCache = {};
+    syncUserScopeUrl();
+    updateUserScopeStatus();
+    loadAllData();
+}
+
+// Apply custom date range with validation
+function applyCustomDateRange() {
+    const startInput = document.getElementById('history-start-date');
+    const endInput = document.getElementById('history-end-date');
+
+    const startDate = new Date(startInput.value);
+    const endDate = new Date(endInput.value);
+
+    // Validate dates
+    if (!startInput.value || !endInput.value) {
+        showToast('Please select both dates');
+        return;
+    }
+
+    if (startDate >= endDate) {
+        showToast('Start must be before end');
+        return;
+    }
+
+    const maxRange = 31 * 24 * 60 * 60 * 1000; // 30 days + 1 day buffer
+    if (endDate - startDate > maxRange) {
+        showToast('Range cannot exceed 30 days');
+        return;
+    }
+
+    loadJobHistory();
+}
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     debugLog('App initializing...', { debug_mode: DEBUG });
+    selectedUserIdentifier = CAN_ADMIN_SCOPE
+        ? normalizeUserIdentifier(new URLSearchParams(window.location.search).get('user'))
+        : '';
     initializeEventListeners();
+    const userScopeInput = document.getElementById('user-scope-input');
+    if (userScopeInput) {
+        userScopeInput.value = selectedUserIdentifier;
+    }
+    updateUserScopeStatus();
     loadAllData();
     setupAutoRefresh();
 });
@@ -31,6 +178,26 @@ document.addEventListener('DOMContentLoaded', () => {
 function initializeEventListeners() {
     // Setup job details modal tabs (only once)
     setupJobDetailsTabs();
+
+    const userScopeForm = document.getElementById('user-scope-form');
+    const userScopeClear = document.getElementById('user-scope-clear');
+    const userScopeInput = document.getElementById('user-scope-input');
+
+    if (CAN_ADMIN_SCOPE && userScopeForm && userScopeClear && userScopeInput) {
+        userScopeForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            applyUserScope();
+        });
+
+        userScopeClear.addEventListener('click', () => {
+            userScopeInput.value = '';
+            applyUserScope();
+        });
+
+        userScopeInput.addEventListener('input', () => {
+            userScopeInput.classList.toggle('input-invalid', !isValidUserIdentifier(normalizeUserIdentifier(userScopeInput.value)));
+        });
+    }
     
     // Refresh button
     document.getElementById('refresh-btn').addEventListener('click', () => {
@@ -54,9 +221,27 @@ function initializeEventListeners() {
     document.getElementById('history-job-search').addEventListener('input', filterHistoryJobs);
     document.getElementById('history-state-filter').addEventListener('change', filterHistoryJobs);
     document.getElementById('history-days').addEventListener('change', () => {
-        loadJobHistory();
+        const value = document.getElementById('history-days').value;
+        const customRangeDiv = document.getElementById('custom-date-range');
+
+        if (value === 'custom') {
+            customRangeDiv.style.display = 'flex';
+            // Set default dates: end = now, start = 7 days ago
+            const now = new Date();
+            const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            document.getElementById('history-end-date').value = formatDateTimeLocal(now);
+            document.getElementById('history-start-date').value = formatDateTimeLocal(sevenDaysAgo);
+        } else {
+            customRangeDiv.style.display = 'none';
+            loadJobHistory();
+        }
     });
-    
+
+    // Custom date range apply button
+    document.getElementById('apply-custom-range').addEventListener('click', () => {
+        applyCustomDateRange();
+    });
+
     // Table sorting - setup for both current and history tables
     document.querySelectorAll('#current-jobs-table [data-sort]').forEach(th => {
         th.addEventListener('click', () => {
@@ -76,7 +261,7 @@ function setupAutoRefresh() {
     clearInterval(autoRefreshInterval);
     autoRefreshInterval = setInterval(() => {
         loadAllData();
-    }, 30000); // 30 seconds
+    }, 120000); // 120 seconds
 }
 
 // Load all data
@@ -106,7 +291,7 @@ async function loadAllData() {
 async function loadSummary() {
     try {
         debugLog('Fetching job summary...');
-        const response = await fetch(`${window.APP_BASE_PATH}/api/summary`);
+        const response = await fetch(getApiUrl('/api/summary'));
         const result = await response.json();
         
         debugLog('Job summary response:', result);
@@ -124,7 +309,7 @@ async function loadSummary() {
 async function loadCurrentJobs() {
     try {
         debugLog('Fetching current jobs...');
-        const response = await fetch(`${window.APP_BASE_PATH}/api/current-jobs`);
+        const response = await fetch(getApiUrl('/api/current-jobs'));
         const result = await response.json();
         
         debugLog('Current jobs response:', result);
@@ -138,7 +323,7 @@ async function loadCurrentJobs() {
                 console.log('[JobApp Debug] Sample current job:', currentJobs[0]);
             }
             
-            renderCurrentJobs(currentJobs);
+            filterCurrentJobs();
         }
     } catch (error) {
         console.error('Failed to load current jobs:', error);
@@ -149,24 +334,60 @@ async function loadCurrentJobs() {
 // Load job history
 async function loadJobHistory() {
     try {
-        const days = document.getElementById('history-days').value;
-        debugLog(`Fetching job history (last ${days} days)...`);
-        
-        const response = await fetch(`${window.APP_BASE_PATH}/api/job-history?days=${days}`);
+        const daysSelect = document.getElementById('history-days').value;
+        let url;
+
+        if (daysSelect === 'custom') {
+            const startDate = document.getElementById('history-start-date').value;
+            const endDate = document.getElementById('history-end-date').value;
+            debugLog(`Fetching job history (custom range: ${startDate} to ${endDate})...`);
+            url = getApiUrl('/api/job-history', { start: startDate, end: endDate });
+        } else {
+            debugLog(`Fetching job history (last ${daysSelect} days)...`);
+            url = getApiUrl('/api/job-history', { days: daysSelect });
+        }
+
+        const response = await fetch(url);
         const result = await response.json();
-        
+
         debugLog('Job history response:', result);
-        
+
         if (result.success) {
             historyJobs = result.data;
             debugLog(`Loaded ${historyJobs.length} historical jobs:`, historyJobs);
-            
+
             // Log detailed info for first job if available
             if (DEBUG && historyJobs.length > 0) {
                 console.log('[JobApp Debug] Sample history job:', historyJobs[0]);
             }
-            
-            renderHistoryJobs(historyJobs);
+
+            // Apply current sort order (default: most recent first)
+            if (historySortColumn) {
+                historyJobs.sort((a, b) => {
+                    let aVal = a[historySortColumn];
+                    let bVal = b[historySortColumn];
+                    // Push missing values (None, N/A) to the bottom
+                    const aMissing = isMissingValue(aVal);
+                    const bMissing = isMissingValue(bVal);
+                    if (aMissing && bMissing) return 0;
+                    if (aMissing) return 1;
+                    if (bMissing) return -1;
+                    if (typeof aVal === 'string') {
+                        aVal = aVal.toLowerCase();
+                        bVal = bVal.toLowerCase();
+                    }
+                    if (aVal < bVal) return historySortDirection === 'asc' ? -1 : 1;
+                    if (aVal > bVal) return historySortDirection === 'asc' ? 1 : -1;
+                    return 0;
+                });
+            }
+
+            filterHistoryJobs();
+        } else {
+            // Show error to user if custom range validation failed
+            if (result.error) {
+                showToast(result.error);
+            }
         }
     } catch (error) {
         console.error('Failed to load job history:', error);
@@ -186,34 +407,54 @@ function updateSummaryStats(data) {
 // Render current jobs table
 function renderCurrentJobs(jobs) {
     const tbody = document.getElementById('current-jobs-table-body');
+    debugLog('renderCurrentJobs called', {
+        count: jobs.length,
+        contains_user_limit_marker: renderCurrentJobs.toString().includes('user-limit-warning')
+    });
     
     if (jobs.length === 0) {
         tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">No current jobs found</td></tr>';
         return;
     }
     
-    tbody.innerHTML = jobs.map(job => `
-        <tr>
+    tbody.innerHTML = jobs.map(job => {
+        const warning = getUserLimitWarning(job);
+        debugLog('Evaluating current job warning state', {
+            job_id: job.job_id,
+            state: job.state,
+            reason: job.reason,
+            warning_match: !!warning,
+            warning_reason_codes: warning ? warning.reasonCodes : null
+        });
+        const stateLabel = job.state_name;
+        return `
+        <tr onclick="showJobDetails('${escapeHtml(job.job_id)}')" >
             <td><strong>${escapeHtml(job.job_id)}</strong></td>
-            <td>${escapeHtml(job.name)}</td>
-            <td>${escapeHtml(job.partition)}</td>
-            <td><span class="state-badge state-${job.state.toLowerCase()}">${job.state_name}</span></td>
+            <td class="truncate-name" data-fullname="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
+            <td class="d-no-small" >${escapeHtml(job.partition)}</td>
+            <td>
+                <span class="state-badge state-${getStateClass(job.state)}">${escapeHtml(stateLabel)}</span>
+                ${warning ? `<span class="user-limit-warning" data-tooltip="${escapeHtml(warning.tooltip)}" aria-label="${escapeHtml(warning.tooltip)}">
+                        <span class="user-limit-warning-icon" aria-hidden="true">&#9888;</span>
+                    </span>` : ''}
+            </td>
             <td>${escapeHtml(job.time_used)}</td>
             <td>${escapeHtml(job.time_limit)}</td>
-            <td>${job.nodes}</td>
-            <td>${job.cpus}</td>
-            <td>${job.gpus}</td>
-            <td>${escapeHtml(job.node_list)}</td>
+            <td class="d-no-small d-no-medium" >${job.nodes}</td>
+            <td class="d-no-small d-no-medium" >${job.cpus}</td>
+            <td class="d-no-small d-no-medium" >${job.gpus}</td>
+            <td class="d-no-small" >${nodeToSshLink(job.state, job.node_list, job.batch_host)}</td>
             <td>
-                <button class="btn btn-info" onclick="showJobDetails('${escapeHtml(job.job_id)}')">
+                <button class="btn btn-info d-no-small" onclick="showJobDetails('${escapeHtml(job.job_id)}')">
                     <i class="fas fa-info-circle"></i> Details
                 </button>
-                <button class="btn btn-danger" onclick="deleteJob('${escapeHtml(job.job_id)}')">
-                    <i class="fas fa-trash"></i> Delete
+                <button class="btn btn-danger" onclick="deleteJob(event, '${escapeHtml(job.job_id)}')">
+                    <i class="fas fa-trash"></i> Cancel
                 </button>
             </td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // Render history jobs table
@@ -226,19 +467,19 @@ function renderHistoryJobs(jobs) {
     }
     
     tbody.innerHTML = jobs.map(job => `
-        <tr>
+        <tr  onclick="showJobDetails('${escapeHtml(job.job_id)}')" >
             <td><strong>${escapeHtml(job.job_id)}</strong></td>
-            <td>${escapeHtml(job.name)}</td>
-            <td>${escapeHtml(job.partition)}</td>
+            <td class="truncate-name" data-fullname="${escapeHtml(job.name)}">${escapeHtml(job.name)}</td>
+            <td class="d-no-small" >${escapeHtml(job.partition)}</td>
             <td><span class="state-badge state-${getStateClass(job.state)}">${escapeHtml(job.state)}</span></td>
             <td>${escapeHtml(job.elapsed)}</td>
-            <td>${escapeHtml(job.start)}</td>
-            <td>${escapeHtml(job.end)}</td>
-            <td>${escapeHtml(job.max_rss)}</td>
-            <td>${job.nodes}</td>
-            <td>${job.cpus}</td>
-            <td>${job.gpus || 0}</td>
-            <td>
+            <td>${escapeHtml(job.start.replace('T',' '))}</td>
+            <td class="d-no-small" >${escapeHtml(job.end.replace('T',' '))}</td>
+            <td class="d-no-small d-no-medium" >${escapeHtml(job.max_rss)}</td>
+            <td class="d-no-small d-no-medium" >${job.nodes}</td>
+            <td class="d-no-small d-no-medium" >${job.cpus}</td>
+            <td class="d-no-small d-no-medium" >${job.gpus || 0}</td>
+            <td class="d-no-small d-no-medium" >
                 <button class="btn btn-info" onclick="showJobDetails('${escapeHtml(job.job_id)}')">
                     <i class="fas fa-info-circle"></i> Details
                 </button>
@@ -259,11 +500,12 @@ function filterCurrentJobs() {
             job.partition.toLowerCase().includes(searchTerm) ||
             job.node_list.toLowerCase().includes(searchTerm);
         
-        const matchesState = stateFilter === 'all' || job.state === stateFilter;
-        
+        const matchesState = stateFilter === 'all' ||
+            job.state.toUpperCase().startsWith(stateFilter.toUpperCase());
+
         return matchesSearch && matchesState;
     });
-    
+
     renderCurrentJobs(filtered);
 }
 
@@ -279,11 +521,12 @@ function filterHistoryJobs() {
             job.partition.toLowerCase().includes(searchTerm) ||
             job.node_list.toLowerCase().includes(searchTerm);
         
-        const matchesState = stateFilter === 'all' || job.state === stateFilter;
-        
+        const matchesState = stateFilter === 'all' ||
+            job.state.toUpperCase().startsWith(stateFilter.toUpperCase());
+
         return matchesSearch && matchesState;
     });
-    
+
     renderHistoryJobs(filtered);
 }
 
@@ -325,17 +568,22 @@ function sortHistoryJobs(column) {
     historyJobs.sort((a, b) => {
         let aVal = a[column];
         let bVal = b[column];
-        
+        // Push missing values (None, N/A) to the bottom
+        const aMissing = isMissingValue(aVal);
+        const bMissing = isMissingValue(bVal);
+        if (aMissing && bMissing) return 0;
+        if (aMissing) return 1;
+        if (bMissing) return -1;
         if (typeof aVal === 'string') {
             aVal = aVal.toLowerCase();
             bVal = bVal.toLowerCase();
         }
-        
+
         if (aVal < bVal) return historySortDirection === 'asc' ? -1 : 1;
         if (aVal > bVal) return historySortDirection === 'asc' ? 1 : -1;
         return 0;
     });
-    
+
     filterHistoryJobs();
 }
 
@@ -369,6 +617,39 @@ async function showJobDetails(jobid) {
 // Close job details modal
 function closeJobDetailsModal() {
     document.getElementById('job-details-modal').classList.add('hidden');
+}
+
+function openAdminCancelModal(jobid) {
+    const modal = document.getElementById('admin-cancel-modal');
+    const messageInput = document.getElementById('admin-cancel-message');
+    const context = document.getElementById('admin-cancel-context');
+
+    pendingAdminCancel = {
+        jobid,
+        userIdentifier: getSelectedUserIdentifier()
+    };
+
+    context.textContent = `Cancel job ${jobid} for ${pendingAdminCancel.userIdentifier}. Update the message below if needed. It will be stored on the job before cancellation.`;
+    messageInput.value = DEFAULT_ADMIN_CANCEL_MESSAGE;
+    modal.classList.remove('hidden');
+    messageInput.focus();
+    messageInput.setSelectionRange(messageInput.value.length, messageInput.value.length);
+}
+
+function closeAdminCancelModal() {
+    document.getElementById('admin-cancel-modal').classList.add('hidden');
+    pendingAdminCancel = null;
+}
+
+async function confirmAdminCancel() {
+    if (!pendingAdminCancel) return;
+
+    const messageInput = document.getElementById('admin-cancel-message');
+    const cancelMessage = messageInput.value.trim() || DEFAULT_ADMIN_CANCEL_MESSAGE;
+    const { jobid } = pendingAdminCancel;
+
+    closeAdminCancelModal();
+    await submitJobCancellation(jobid, { adminScoped: true, cancelMessage });
 }
 
 // Setup job details modal tabs (called once on initialization)
@@ -414,7 +695,7 @@ async function loadBasicInfo(jobid) {
     try {
         debugLog(`Fetching basic info for job: ${jobid}`);
         
-        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`);
+        const response = await fetch(getApiUrl(`/api/job/${jobid}`));
         const result = await response.json();
         
         debugLog('Basic info response:', result);
@@ -451,12 +732,16 @@ function renderBasicInfoData(details) {
                 <div class="detail-value">${escapeHtml(details.partition || 'N/A')}</div>
             </div>
             <div class="detail-item">
+                <div class="detail-label">QOS</div>
+                <div class="detail-value">${escapeHtml(details.qos || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
                 <div class="detail-label">Nodes</div>
                 <div class="detail-value">${escapeHtml(details.nodes || 'N/A')}</div>
             </div>
             <div class="detail-item">
                 <div class="detail-label">Node List</div>
-                <div class="detail-value">${escapeHtml(details.node_list || 'N/A')}</div>
+                <div class="detail-value">${nodeToSshLink(details.state, details.node_list, details.batch_host)}</div>
             </div>
             <div class="detail-item">
                 <div class="detail-label">State</div>
@@ -505,9 +790,9 @@ async function loadResourcesIO(jobid) {
         
         // Fetch both efficiency (seff) and jobinfo data in parallel
         const [effResponse, infoResponse, detailsResponse] = await Promise.all([
-            fetch(`${window.APP_BASE_PATH}/api/job/${jobid}/efficiency`),
-            fetch(`${window.APP_BASE_PATH}/api/job/${jobid}/info`),
-            fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`)
+            fetch(getApiUrl(`/api/job/${jobid}/efficiency`)),
+            fetch(getApiUrl(`/api/job/${jobid}/info`)),
+            fetch(getApiUrl(`/api/job/${jobid}`))
         ]);
         
         const [effResult, infoResult, detailsResult] = await Promise.all([
@@ -554,6 +839,10 @@ function renderResourcesIOData(data) {
                 <div class="detail-value">${details.gpus || 0}</div>
             </div>
             <div class="detail-item">
+                <div class="detail-label">GPU Model</div>
+                <div class="detail-value">${escapeHtml(details.gpu_model || 'N/A')}</div>
+            </div>
+            <div class="detail-item">
                 <div class="detail-label">Requested Memory</div>
                 <div class="detail-value">${escapeHtml(details.req_mem || 'N/A')}</div>
             </div>
@@ -594,7 +883,7 @@ async function loadJobScript(jobid) {
     try {
         debugLog(`Fetching job script for job: ${jobid}`);
         
-        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}/script`);
+        const response = await fetch(getApiUrl(`/api/job/${jobid}/script`));
         const result = await response.json();
         
         debugLog('Job script response:', result);
@@ -627,7 +916,7 @@ function renderJobScriptData(data) {
     
     content.innerHTML = `
         <div style="position: relative;">
-            <button onclick="copyJobScript()" class="btn btn-sm" style="position: absolute; top: 10px; right: 10px; z-index: 10;">
+            <button onclick="copyJobScript()" class="btn btn-sm" style="position: absolute; top: 10px; right: 20px; z-index: 10;">
                 <i class="fas fa-copy"></i> Copy
             </button>
             <pre class="raw-output" id="job-script-content" style="padding-top: 45px;">${escapeHtml(data.script)}</pre>
@@ -652,9 +941,25 @@ function copyJobScript() {
 window.copyJobScript = copyJobScript;
 
 // Delete job function with confirmation
-async function deleteJob(jobid) {
-    // Show confirmation dialog
-    const confirmed = confirm(`Are you sure you want to cancel job ${jobid}?\n\nThis action cannot be undone.`);
+async function deleteJob(event, jobid) {
+    event.stopPropagation();
+
+    const isAdminScopedCancel = CAN_ADMIN_SCOPE && hasScopedUserSelection();
+
+    if (isAdminScopedCancel) {
+        openAdminCancelModal(jobid);
+        return;
+    }
+
+    await submitJobCancellation(jobid, { adminScoped: false, cancelMessage: '' });
+}
+
+async function submitJobCancellation(jobid, { adminScoped, cancelMessage }) {
+    const confirmed = confirm(
+        adminScoped
+            ? `Are you sure you want to cancel job ${jobid} for ${getSelectedUserIdentifier()}?\n\nThe admin message will be recorded before cancellation.`
+            : `Are you sure you want to cancel job ${jobid}?\n\nThis action cannot be undone.`
+    );
 
     if (!confirmed) {
         return;
@@ -663,9 +968,13 @@ async function deleteJob(jobid) {
     try {
         showLoading(true);
 
-        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`, {
-            method: 'DELETE'
-        });
+        const fetchOptions = { method: 'DELETE' };
+        if (cancelMessage) {
+            fetchOptions.headers = { 'Content-Type': 'application/json' };
+            fetchOptions.body = JSON.stringify({ comment: cancelMessage });
+        }
+
+        const response = await fetch(`${window.APP_BASE_PATH}/api/job/${jobid}`, fetchOptions);
 
         const result = await response.json();
 
@@ -677,7 +986,13 @@ async function deleteJob(jobid) {
             filterCurrentJobs();
 
             // Show success toast
-            showToast(`Job ${jobid} has been successfully cancelled.`, 'success', 'Job Cancelled');
+            showToast(
+                adminScoped
+                    ? `Job ${jobid} has been cancelled and the admin message was recorded.`
+                    : `Job ${jobid} has been successfully cancelled.`,
+                'success',
+                'Job Cancelled'
+            );
 
             // Wait 3 seconds before refetching to give SLURM time to process the cancellation
             // This prevents the cancelled job from reappearing due to SLURM's processing delay
@@ -797,6 +1112,75 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+const USER_LIMIT_REASON_DETAILS = {
+    QOSMaxBBPerUser: 'Burst buffer request exceeds per-user maximum for this QOS.',
+    QOSMaxBillingPerUser: 'Billing request exceeds per-user maximum for this QOS.',
+    QOSMaxCpuPerUserLimit: 'CPU request exceeds per-user maximum for this QOS.',
+    QOSMaxEnergyPerUser: 'Energy request exceeds per-user maximum for this QOS.',
+    QOSMaxGRESPerUser: 'GRES request exceeds per-user maximum for this QOS.',
+    QOSMaxJobsPerUserLimit: 'User has reached max running jobs for this QOS.',
+    QOSMaxLicensePerUser: 'License request exceeds per-user maximum for this QOS.',
+    QOSMaxMemoryPerUser: 'Memory request exceeds per-user maximum for this QOS.',
+    QOSMaxNodePerUserLimit: 'Node request exceeds per-user maximum for this QOS.',
+    QOSMaxSubmitJobPerUserLimit: 'User has reached max running/pending jobs for this QOS.',
+    QOSMaxUnknownPerUser: 'Unknown resource request exceeds per-user maximum for this QOS.'
+};
+
+function getUserLimitWarning(job) {
+    if (!job || job.state !== 'PD') return null;
+    const reason = (job.reason || '').trim();
+    if (!reason) return null;
+
+    // Split comma-separated reason codes and keep those matching Max.*PerUser
+    const reasonCodes = reason.split(',').map(r => r.trim()).filter(r => /Max.*PerUser/i.test(r));
+    if (reasonCodes.length === 0) {
+        debugLog('Pending job reason does not match MaxPerUser', {
+            job_id: job.job_id,
+            reason
+        });
+        return null;
+    }
+
+    const lines = reasonCodes.map(code => {
+        const description = USER_LIMIT_REASON_DETAILS[code];
+        return description
+            ? `• ${code}: ${description}`
+            : `• ${code}: Per-user limit exceeded.`;
+    });
+    const tooltip = 'Pending due to:\n' + lines.join('\n');
+
+    return { reasonCodes, tooltip };
+}
+
+// Generate an SSH link for a node name
+// For multi-node jobs, uses the batch host; for single-node, uses the node_list directly
+function nodeToSshLink(jobState , nodeList, batchHost) {
+    if ( !(jobState == 'R' || jobState == 'RUNNING') ) return escapeHtml(nodeList || 'N/A');
+
+    if (!nodeList || isMissingValue(nodeList) ) return escapeHtml(nodeList || 'N/A');
+
+    // Determine which hostname to link to
+    let hostname;
+    let extraNodeList;
+    const isMultiNode = nodeList.includes('[') || nodeList.includes(',');
+
+    if (isMultiNode && batchHost && !isMissingValue(batchHost)) {
+        // Multi-node job: link to batch host
+        hostname = batchHost;
+        extraNodeList = `, ${escapeHtml(nodeList)}`;
+    } else if (!isMultiNode) {
+        // Single-node job: link directly to the node
+        hostname = nodeList;
+        extraNodeList = '';
+    } else {
+        // Multi-node with no batch host available: show plain text
+        return escapeHtml(nodeList);
+    }
+
+    const shellUrl = `${window.OOD_SHELL_URL}/${encodeURIComponent(hostname)}`;
+    return `<a href="${shellUrl}" class="node-ssh-link" title="Open shell on ${escapeHtml(hostname)}" target="_blank" onclick="event.stopPropagation()"><i class="fas fa-terminal"></i> ${escapeHtml(hostname)}</a> ${extraNodeList}`;
+}
+
 function getStateClass(state) {
     if (!state) return 'unknown';
     const s = state.toLowerCase();
@@ -806,12 +1190,15 @@ function getStateClass(state) {
     if (s.includes('failed') || s === 'f') return 'failed';
     if (s.includes('cancelled') || s === 'ca') return 'cancelled';
     if (s.includes('timeout') || s === 'to') return 'timeout';
+    if (s.includes('out_of_memory') || s === 'oom') return 'out_of_memory';
     return 'unknown';
 }
 
 // Make functions globally accessible
 window.showJobDetails = showJobDetails;
 window.closeJobDetailsModal = closeJobDetailsModal;
+window.closeAdminCancelModal = closeAdminCancelModal;
+window.confirmAdminCancel = confirmAdminCancel;
 
 // Tooltip system for column headers
 function initTooltips() {
@@ -847,8 +1234,71 @@ function initTooltips() {
     });
 }
 
+function initUserLimitTooltips() {
+    let tooltipEl = document.getElementById('column-tooltip');
+    if (!tooltipEl) {
+        tooltipEl = document.createElement('div');
+        tooltipEl.id = 'column-tooltip';
+        tooltipEl.className = 'column-tooltip';
+        document.body.appendChild(tooltipEl);
+    }
+
+    document.addEventListener('mouseenter', (e) => {
+        const warning = e.target.closest('.user-limit-warning');
+        if (!warning) return;
+
+        const tooltipText = warning.getAttribute('data-tooltip');
+        if (!tooltipText) return;
+
+        tooltipEl.textContent = tooltipText;
+        tooltipEl.classList.add('visible');
+
+        const rect = warning.getBoundingClientRect();
+        tooltipEl.style.left = rect.left + (rect.width / 2) + 'px';
+        tooltipEl.style.top = rect.bottom + 8 + 'px';
+    }, true);
+
+    document.addEventListener('mouseleave', (e) => {
+        const warning = e.target.closest('.user-limit-warning');
+        if (!warning) return;
+        tooltipEl.classList.remove('visible');
+    }, true);
+}
+
+// Tooltip for truncated job names
+function initNameTooltips() {
+    let tooltip = document.getElementById('name-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'name-tooltip';
+        tooltip.className = 'name-tooltip';
+        document.body.appendChild(tooltip);
+    }
+
+    document.addEventListener('mouseenter', (e) => {
+        const cell = e.target.closest('.truncate-name');
+        if (!cell) return;
+        const fullName = cell.getAttribute('data-fullname');
+        if (!fullName) return;
+
+        tooltip.textContent = fullName;
+        tooltip.style.display = 'block';
+
+        const rect = cell.getBoundingClientRect();
+        tooltip.style.left = rect.left + 'px';
+        tooltip.style.top = rect.bottom + 'px';
+    }, true);
+
+    document.addEventListener('mouseleave', (e) => {
+        const cell = e.target.closest('.truncate-name');
+        if (!cell) return;
+        tooltip.style.display = 'none';
+    }, true);
+}
+
 // Initialize tooltips when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     initTooltips();
+    initUserLimitTooltips();
+    initNameTooltips();
 });
-
