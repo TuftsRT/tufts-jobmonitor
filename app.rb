@@ -13,7 +13,16 @@ enable :static
 helpers do
   ADMIN_GROUP_NAMES = ['tts_rsch_hpc_admin', 'TUFTS\\tts_rsch_hpc_admin'].freeze
   USER_IDENTIFIER_PATTERN = /\A[a-zA-Z0-9._-]+\z/
+  # SLURM job IDs: numeric, optionally with array/het/step suffixes (e.g. 123, 123_4, 123+0, 123.batch)
+  JOB_ID_PATTERN = /\A[0-9][0-9_.+]*\z/
   MAX_ADMIN_CANCEL_MESSAGE_LENGTH = 500
+
+  # Validate a job id from the URL before it reaches any shell/command layer.
+  def safe_job_id
+    jobid = params[:jobid].to_s.strip
+    halt 400, { success: false, error: 'Invalid job identifier' }.to_json unless jobid.match?(JOB_ID_PATTERN)
+    jobid
+  end
 
   def current_unix_user
     ENV['USER'].to_s.strip.tap do |value|
@@ -128,7 +137,7 @@ get '/api/job/:jobid' do
   content_type :json
   
   begin
-    jobid = params[:jobid]
+    jobid = safe_job_id
     details = JobParser.get_job_details(jobid)
     { success: true, data: details }.to_json
   rescue => e
@@ -142,7 +151,7 @@ get '/api/job/:jobid/efficiency' do
   content_type :json
   
   begin
-    jobid = params[:jobid]
+    jobid = safe_job_id
     efficiency = JobParser.get_job_efficiency(jobid)
     { success: true, data: efficiency }.to_json
   rescue => e
@@ -156,7 +165,7 @@ get '/api/job/:jobid/info' do
   content_type :json
   
   begin
-    jobid = params[:jobid]
+    jobid = safe_job_id
     info = JobParser.get_jobinfo(jobid)
     { success: true, data: info }.to_json
   rescue => e
@@ -170,7 +179,7 @@ get '/api/job/:jobid/script' do
   content_type :json
 
   begin
-    jobid = params[:jobid]
+    jobid = safe_job_id
     script = JobParser.get_job_script(jobid)
     { success: true, data: script }.to_json
   rescue => e
@@ -184,7 +193,7 @@ delete '/api/job/:jobid' do
   content_type :json
 
   begin
-    jobid = params[:jobid]
+    jobid = safe_job_id
     result = JobParser.cancel_job(jobid, comment: requested_cancel_message)
 
     if result[:success]
@@ -216,36 +225,4 @@ end
 get '/health' do
   content_type :json
   { status: 'ok', timestamp: Time.now.to_i }.to_json
-end
-
-# Debug endpoint to see raw sacct output
-get '/api/debug/sacct' do
-  content_type :json
-  
-  require 'open3'
-  
-  days = params[:days]&.to_i || 7
-  end_date = Time.now
-  start_date = end_date - (days * 24 * 60 * 60)
-  
-  start_str = start_date.strftime('%Y-%m-%d')
-  end_str = (end_date + 86400).strftime('%Y-%m-%d')  # Add 1 day to include today
-  
-  cmd = "sacct --user=$USER --starttime #{start_str} --endtime #{end_str} " +
-        "--format=JobID,JobName,Partition,State,Elapsed,Start,End,MaxRSS,ReqMem,NNodes,NCPUS,NodeList,ExitCode,ReqTRES,QOS " +
-        "--noheader --parsable2"
-  
-  stdout, stderr, status = Open3.capture3(cmd)
-  
-  {
-    command: cmd,
-    start_str: start_str,
-    end_str: end_str,
-    stdout: stdout,
-    stderr: stderr,
-    success: status.success?,
-    exit_code: status.exitstatus,
-    line_count: stdout.lines.count,
-    lines: stdout.lines.map(&:strip).first(20)
-  }.to_json
 end
