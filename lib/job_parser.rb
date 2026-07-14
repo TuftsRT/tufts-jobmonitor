@@ -134,7 +134,7 @@ module JobParser
 
     # First pass: collect memory from job steps and check for OOM
     output.each_line do |line|
-      parts = parse_slurm_line(line, trailing_fields_count: 12)
+      parts = parse_slurm_line(line, trailing_fields_count: 13)
       next unless parts
 
       job_id = parts[0]
@@ -236,7 +236,7 @@ module JobParser
   # Get detailed job information using scontrol (for current jobs) or sacct (for historical jobs)
   def self.get_job_details(jobid)
     # First try scontrol (works for running/pending jobs)
-    output = run_command("scontrol show jobid -dd #{jobid}")
+    output = run_command(['scontrol', 'show', 'jobid', '-dd', jobid.to_s])
     
     # If scontrol returns empty or very short output, job is historical - use sacct
     if output.strip.empty? || output.length < 50
@@ -292,14 +292,16 @@ module JobParser
   # Get historical job details using sacct
   def self.get_historical_job_details(jobid)
     # Use sacct with verbose format for historical jobs
-    output = run_command(
-      "sacct -j #{jobid} --format=JobID,JobName,User,Account,Partition,State," +
-      "Submit,Start,End,Elapsed,TimeLimit,NCPUS,NNodes,NodeList,ReqMem,MaxRSS," +
-      "ExitCode,WorkDir,ReqTRES,QOS --parsable2 --noheader"
-    )
-    
+    output = run_command([
+      'sacct', '-j', jobid.to_s,
+      '--format=JobID,JobName,User,Account,Partition,State,' \
+      'Submit,Start,End,Elapsed,TimeLimit,NCPUS,NNodes,NodeList,ReqMem,MaxRSS,' \
+      'ExitCode,WorkDir,ReqTRES,QOS',
+      '--parsable2', '--noheader'
+    ])
+
     # Also get the full format output for raw display
-    raw_output = run_command("sacct -j #{jobid} -o ALL")
+    raw_output = run_command(['sacct', '-j', jobid.to_s, '-o', 'ALL'])
     
     details = {
       job_id: jobid,
@@ -369,7 +371,7 @@ module JobParser
 
   # Get job efficiency using seff
   def self.get_job_efficiency(jobid)
-    output = run_command("seff #{jobid}")
+    output = run_command(['seff', jobid.to_s])
     
     efficiency = {
       job_id: jobid,
@@ -417,7 +419,7 @@ module JobParser
     end
     
     # Run jobinfo and capture both stdout and stderr
-    stdout, stderr, status = Open3.capture3("#{jobinfo_path} #{jobid}")
+    stdout, stderr, status = Open3.capture3(jobinfo_path, jobid.to_s)
     
     info = {
       job_id: jobid,
@@ -568,7 +570,7 @@ module JobParser
   def self.get_node_gpu_model(node_name)
     return nil if node_name.nil? || node_name.empty?
 
-    output = run_command("scontrol show node #{node_name} 2>/dev/null")
+    output = run_command(['scontrol', 'show', 'node', node_name.to_s])
     if output =~ /Gres=gpu:(\w+):/
       return $1.upcase
     end
