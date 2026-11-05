@@ -10,6 +10,13 @@ set :views, File.expand_path('views', __dir__)
 set :static, true
 enable :static
 
+# Sinatra >= 4.1 enables Rack::Protection::HostAuthorization in development
+# (which is how OnDemand runs sandbox/dev apps) and only permits localhost,
+# so requests via the OnDemand hostname get "Host not permitted".
+set :host_authorization, {
+  permitted_hosts: ['localhost', '.localhost', '.tufts.edu']
+}
+
 helpers do
   ADMIN_GROUP_NAMES = ['tts_rsch_hpc_admin', 'TUFTS\\tts_rsch_hpc_admin'].freeze
   USER_IDENTIFIER_PATTERN = /\A[a-zA-Z0-9._-]+\z/
